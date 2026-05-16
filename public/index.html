@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Claude Thread Insights</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 13px;
+      background: #0f0f0f;
+      color: #d4d4d4;
+      height: 100vh;
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* ── Sidebar ── */
+    #sidebar {
+      width: 260px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid #222;
+      overflow: hidden;
+    }
+
+    #sidebar h2 {
+      padding: 14px 12px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: #777;
+      border-bottom: 1px solid #1e1e1e;
+    }
+
+    .list-pane {
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .list-item {
+      padding: 8px 12px;
+      cursor: pointer;
+      border-bottom: 1px solid #1a1a1a;
+      line-height: 1.4;
+    }
+    .list-item:hover { background: #1a1a1a; }
+    .list-item.active { background: #1e3a5f; }
+
+    .item-title {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: #e0e0e0;
+      font-size: 12px;
+    }
+    .item-sub {
+      color: #666;
+      font-size: 11px;
+      margin-top: 2px;
+    }
+
+    /* ── Main ── */
+    #main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    #header {
+      padding: 12px 18px;
+      border-bottom: 1px solid #222;
+      display: flex;
+      align-items: baseline;
+      gap: 16px;
+    }
+    #session-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #e8e8e8;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #session-stats { color: #666; font-size: 11px; white-space: nowrap; }
+
+    #chart-container {
+      padding: 16px 18px 8px;
+      height: 260px;
+      flex-shrink: 0;
+    }
+
+    #turns-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0 18px 18px;
+    }
+
+    .turn-row {
+      display: grid;
+      grid-template-columns: 60px 80px 1fr auto;
+      gap: 10px;
+      align-items: baseline;
+      padding: 5px 0;
+      border-bottom: 1px solid #1a1a1a;
+      font-size: 12px;
+    }
+    .turn-role { color: #888; font-variant: small-caps; }
+    .turn-role.assistant { color: #5a9fd4; }
+    .turn-time { color: #555; font-size: 11px; font-variant-numeric: tabular-nums; }
+    .turn-preview { color: #c0c0c0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .turn-tokens { color: #6a9f5a; font-variant-numeric: tabular-nums; text-align: right; font-size: 11px; white-space: nowrap; }
+
+    #placeholder {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #444;
+      font-size: 14px;
+    }
+
+    /* scrollbars */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+  </style>
+</head>
+<body>
+
+<div id="sidebar">
+  <h2>Projects</h2>
+  <div class="list-pane" id="projects-list"></div>
+</div>
+
+<div id="main">
+  <div id="placeholder">Select a session to view token usage</div>
+  <div id="session-view" style="display:none; flex-direction:column; height:100%; overflow:hidden;">
+    <div id="header">
+      <div id="session-title"></div>
+      <div id="session-stats"></div>
+    </div>
+    <div id="chart-container">
+      <canvas id="chart"></canvas>
+    </div>
+    <div id="turns-container"></div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let chart = null;
+let activeProjectEl = null;
+
+// ── API helpers ─────────────────────────────────────────────────────────────
+
+async function api(path) {
+  const res = await fetch(path);
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json();
+}
+
+function fmt(n) {
+  if (n == null) return "—";
+  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+}
+
+function fmtTime(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function fmtDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return d.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+// ── Projects ────────────────────────────────────────────────────────────────
+
+async function loadProjects() {
+  const projects = await api("/api/projects");
+  const list = $("projects-list");
+  list.innerHTML = "";
+
+  if (!projects.length) {
+    list.innerHTML = '<div class="list-item"><div class="item-sub">No projects found</div></div>';
+    return;
+  }
+
+  projects.forEach(p => {
+    const el = document.createElement("div");
+    el.className = "list-item";
+    const name = p.display_name.split("/").filter(Boolean).pop() || p.display_name;
+    el.innerHTML = `
+      <div class="item-title" title="${p.display_name}">${name}</div>
+      <div class="item-sub">${p.session_count} session${p.session_count !== 1 ? "s" : ""} · ${fmtDate(p.last_active)}</div>
+    `;
+    el.addEventListener("click", () => {
+      activeProjectEl?.classList.remove("active");
+      el.classList.add("active");
+      activeProjectEl = el;
+      loadSessions(p.id, p.display_name);
+    });
+    list.appendChild(el);
+  });
+}
+
+// ── Sessions ─────────────────────────────────────────────────────────────────
+
+async function loadSessions(projectId, projectName) {
+  const sessions = await api(`/api/projects/${encodeURIComponent(projectId)}/sessions`);
+
+  // Replace sidebar with sessions sub-list (prepend a back button)
+  const list = $("projects-list");
+  list.innerHTML = "";
+
+  const back = document.createElement("div");
+  back.className = "list-item";
+  back.innerHTML = `<div class="item-sub">← back</div><div class="item-title">${projectName.split("/").filter(Boolean).pop()}</div>`;
+  back.addEventListener("click", () => loadProjects());
+  list.appendChild(back);
+
+  if (!sessions.length) {
+    list.innerHTML += '<div class="list-item"><div class="item-sub">No sessions</div></div>';
+    return;
+  }
+
+  sessions.forEach(s => {
+    const el = document.createElement("div");
+    el.className = "list-item";
+    const kb = (s.size_bytes / 1024).toFixed(0);
+    el.innerHTML = `
+      <div class="item-title">${s.id.slice(0, 8)}</div>
+      <div class="item-sub">${fmtDate(s.modified_at)} · ${kb} KB</div>
+    `;
+    el.addEventListener("click", () => loadSession(projectId, s.id));
+    list.appendChild(el);
+  });
+}
+
+// ── Session detail ────────────────────────────────────────────────────────────
+
+async function loadSession(projectId, sessionId) {
+  const session = await api(
+    `/api/projects/${encodeURIComponent(projectId)}/sessions/${sessionId}`
+  );
+
+  $("placeholder").style.display = "none";
+  $("session-view").style.display = "flex";
+
+  const name = (session.project || sessionId).split("/").filter(Boolean).pop();
+  $("session-title").textContent = name;
+  $("session-stats").textContent =
+    `${session.turn_count} turns · peak context ${fmt(session.totals.peak_context_tokens)} tok · output ${fmt(session.totals.output_tokens)} tok`;
+
+  renderChart(session.turns);
+  renderTurns(session.turns);
+}
+
+// ── Chart ─────────────────────────────────────────────────────────────────────
+
+function renderChart(turns) {
+  const assistant = turns.filter(t => t.role === "assistant" && t.context_tokens != null);
+  const labels = assistant.map(t => fmtTime(t.timestamp));
+  const contextData = assistant.map(t => t.context_tokens);
+  const outputData = assistant.map(t => t.output_tokens ?? 0);
+
+  if (chart) chart.destroy();
+
+  chart = new Chart($("chart"), {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "Context tokens (snapshot)",
+          data: contextData,
+          borderColor: "#5a9fd4",
+          backgroundColor: "rgba(90,159,212,0.08)",
+          fill: true,
+          tension: 0.3,
+          pointRadius: 3,
+          yAxisID: "yContext",
+        },
+        {
+          label: "Output tokens",
+          data: outputData,
+          borderColor: "#6a9f5a",
+          backgroundColor: "transparent",
+          tension: 0.3,
+          pointRadius: 2,
+          yAxisID: "yOutput",
+        },
+      ],
+    },
+    options: {
+      animation: false,
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { labels: { color: "#888", font: { size: 11 } } },
+        tooltip: {
+          backgroundColor: "#1a1a1a",
+          titleColor: "#aaa",
+          bodyColor: "#ddd",
+          callbacks: {
+            label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y.toLocaleString()}`,
+          },
+        },
+      },
+      scales: {
+        x: { ticks: { color: "#555", font: { size: 10 } }, grid: { color: "#1a1a1a" } },
+        yContext: {
+          type: "linear",
+          position: "left",
+          ticks: { color: "#5a9fd4", font: { size: 10 }, callback: v => fmt(v) },
+          grid: { color: "#1a1a1a" },
+        },
+        yOutput: {
+          type: "linear",
+          position: "right",
+          ticks: { color: "#6a9f5a", font: { size: 10 }, callback: v => fmt(v) },
+          grid: { drawOnChartArea: false },
+        },
+      },
+    },
+  });
+}
+
+// ── Turns list ────────────────────────────────────────────────────────────────
+
+function renderTurns(turns) {
+  const container = $("turns-container");
+  container.innerHTML = "";
+
+  turns.forEach(t => {
+    const row = document.createElement("div");
+    row.className = "turn-row";
+    row.innerHTML = `
+      <div class="turn-role ${t.role}">${t.role}</div>
+      <div class="turn-time">${fmtTime(t.timestamp)}</div>
+      <div class="turn-preview">${t.text_preview ?? ""}</div>
+      <div class="turn-tokens">${t.context_tokens != null ? fmt(t.context_tokens) + " ctx" : ""}</div>
+    `;
+    container.appendChild(row);
+  });
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+
+loadProjects().catch(e => console.error("Failed to load projects:", e));
+</script>
+</body>
+</html>

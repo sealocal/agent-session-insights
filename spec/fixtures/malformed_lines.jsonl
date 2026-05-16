@@ -1,0 +1,5 @@
+{"type":"user","message":{"role":"user","content":"First message"},"uuid":"aaaa0001","timestamp":"2026-05-10T10:00:00.000Z","cwd":"/Users/test/proj","sessionId":"sess-malformed"}
+{this is not valid json at all
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Response after bad line"}],"usage":{"input_tokens":800,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":30}},"uuid":"bbbb0001","timestamp":"2026-05-10T10:00:05.000Z","cwd":"/Users/test/proj","sessionId":"sess-malformed"}
+ALSO NOT JSON
+{"type":"user","message":{"role":"user","content":"Another message"},"uuid":"aaaa0002","timestamp":"2026-05-10T10:01:00.000Z","sessionId":"sess-malformed"}

@@ -45,8 +45,8 @@ Three distinct layers — keep them separate:
 
 **Server (`app.rb`):** Sinatra routes exposing a JSON API:
 - `GET /api/projects` — list projects (decoded directory names)
-- `GET /api/projects/:id/sessions` — list sessions for a project
-- `GET /api/sessions/:id` — parsed session data
+- `GET /api/projects/:project_id/sessions` — list sessions for a project
+- `GET /api/projects/:project_id/sessions/:session_id` — full parsed session
 
 **Frontend (static files served by Sinatra):** Consumes the JSON API. Plain JS + a charting library (Chart.js, uPlot, or similar). No heavy framework.
 

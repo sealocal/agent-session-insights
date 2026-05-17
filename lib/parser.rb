@@ -53,6 +53,8 @@ module Parser
           next
         end
 
+      next unless record.is_a?(Hash)
+
       # Grab project path from whichever record carries cwd first
       project ||= record["cwd"]
 
@@ -74,13 +76,16 @@ module Parser
   # turns. Returns nil for meta records, tool-delta records, and other types
   # that aren't surfaced to the user.
   def build_turn(record, index)
+    return nil unless record.is_a?(Hash)
+
     role = record["type"]
     return nil unless %w[user assistant].include?(role)
 
     # isMeta records are internal harness messages (skill routing, etc.)
     return nil if record["isMeta"]
 
-    usage = record.dig("message", "usage") || {}
+    message = record["message"]
+    usage = (message.is_a?(Hash) ? message["usage"] : nil) || {}
 
     Turn.new(
       index: index,

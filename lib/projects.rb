@@ -1,8 +1,9 @@
-require "digest"
 require "json"
+require "time"
 
 # Handles directory-level concerns: listing projects and sessions, resolving
-# safe file paths. No parsing of record contents happens here.
+# safe file paths. cwd_from_files peeks at session records to find the real
+# project path, but no turn-level parsing happens here.
 module Projects
   module_function
 
@@ -43,15 +44,23 @@ module Projects
     end.sort_by { |s| s[:modified_at] }.reverse
   end
 
-  # Returns the absolute path to a session file, or nil if not found or
-  # if the resolved path would escape data_root (path traversal guard).
+  # Returns the absolute real path to a session file, or nil if not found or
+  # if the resolved path (after symlink expansion) would escape data_root.
   def session_path(data_root, project_id, session_id)
     dir = safe_project_dir(data_root, project_id)
     return nil unless dir
     return nil unless safe_filename?(session_id)
 
     path = File.join(dir, "#{session_id}.jsonl")
-    File.exist?(path) ? path : nil
+    return nil unless File.exist?(path)
+
+    canonical_root = File.realpath(data_root)
+    real_path = File.realpath(path)
+    return nil unless real_path.start_with?("#{canonical_root}/")
+
+    real_path
+  rescue Errno::ENOENT, Errno::EACCES
+    nil
   end
 
   # private helpers ──────────────────────────────────────────────────────
@@ -60,14 +69,20 @@ module Projects
     return nil if project_id.nil? || project_id.empty?
     return nil if project_id.include?("\0")
 
-    canonical_root = File.expand_path(data_root)
+    canonical_root = File.realpath(data_root)
     candidate = File.expand_path(File.join(canonical_root, project_id))
 
-    # Must stay inside data_root
+    # Pre-realpath prefix check rejects obvious traversal attempts
     return nil unless candidate.start_with?("#{canonical_root}/")
     return nil unless File.directory?(candidate)
 
-    candidate
+    # Resolve symlinks and verify the real path is still inside data_root
+    real_candidate = File.realpath(candidate)
+    return nil unless real_candidate.start_with?("#{canonical_root}/")
+
+    real_candidate
+  rescue Errno::ENOENT, Errno::EACCES
+    nil
   end
 
   def safe_filename?(name)
@@ -79,12 +94,17 @@ module Projects
     Dir.glob(File.join(dir, "*.jsonl")).sort
   end
 
-  # Peek at the first record in any session file that carries a cwd field.
-  # This gives us the real project path rather than an approximate decode.
-  def cwd_from_files(files)
+  # Peek at the first few records of any session file to find a cwd field.
+  # Bounded to avoid scanning large files when cwd appears early (it always does).
+  def cwd_from_files(files, limit: 10)
     files.each do |path|
+      count = 0
       File.foreach(path, encoding: "utf-8") do |line|
+        break if (count += 1) > limit
+
         record = JSON.parse(line.strip)
+        next unless record.is_a?(Hash)
+
         cwd = record["cwd"]
         return cwd if cwd && !cwd.empty?
       rescue JSON::ParserError
@@ -98,7 +118,6 @@ module Projects
   # This is lossy (can't distinguish path separator from literal dash)
   # but good enough when cwd isn't available.
   def decode_dir_name(encoded)
-    # Strip leading "-" then replace remaining "-" with "/"
     "/#{encoded.sub(/\A-/, "").gsub("-", "/")}"
   end
 end

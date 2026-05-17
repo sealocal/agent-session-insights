@@ -199,10 +199,18 @@ async function loadProjects() {
     const el = document.createElement("div");
     el.className = "list-item";
     const name = p.display_name.split("/").filter(Boolean).pop() || p.display_name;
-    el.innerHTML = `
-      <div class="item-title" title="${p.display_name}">${name}</div>
-      <div class="item-sub">${p.session_count} session${p.session_count !== 1 ? "s" : ""} · ${fmtDate(p.last_active)}</div>
-    `;
+
+    const title = document.createElement("div");
+    title.className = "item-title";
+    title.setAttribute("title", p.display_name);
+    title.textContent = name;
+
+    const sub = document.createElement("div");
+    sub.className = "item-sub";
+    sub.textContent = `${p.session_count} session${p.session_count !== 1 ? "s" : ""} · ${fmtDate(p.last_active)}`;
+
+    el.appendChild(title);
+    el.appendChild(sub);
     el.addEventListener("click", () => {
       activeProjectEl?.classList.remove("active");
       el.classList.add("active");
@@ -224,7 +232,14 @@ async function loadSessions(projectId, projectName) {
 
   const back = document.createElement("div");
   back.className = "list-item";
-  back.innerHTML = `<div class="item-sub">← back</div><div class="item-title">${projectName.split("/").filter(Boolean).pop()}</div>`;
+  const backSub = document.createElement("div");
+  backSub.className = "item-sub";
+  backSub.textContent = "← back";
+  const backTitle = document.createElement("div");
+  backTitle.className = "item-title";
+  backTitle.textContent = projectName.split("/").filter(Boolean).pop() || projectName;
+  back.appendChild(backSub);
+  back.appendChild(backTitle);
   back.addEventListener("click", () => loadProjects());
   list.appendChild(back);
 
@@ -345,12 +360,27 @@ function renderTurns(turns) {
   turns.forEach(t => {
     const row = document.createElement("div");
     row.className = "turn-row";
-    row.innerHTML = `
-      <div class="turn-role ${t.role}">${t.role}</div>
-      <div class="turn-time">${fmtTime(t.timestamp)}</div>
-      <div class="turn-preview">${t.text_preview ?? ""}</div>
-      <div class="turn-tokens">${t.context_tokens != null ? fmt(t.context_tokens) + " ctx" : ""}</div>
-    `;
+
+    const roleEl = document.createElement("div");
+    roleEl.className = `turn-role ${t.role}`;  // t.role is "user"|"assistant" from server
+    roleEl.textContent = t.role;
+
+    const timeEl = document.createElement("div");
+    timeEl.className = "turn-time";
+    timeEl.textContent = fmtTime(t.timestamp);
+
+    const previewEl = document.createElement("div");
+    previewEl.className = "turn-preview";
+    previewEl.textContent = t.text_preview ?? "";
+
+    const tokensEl = document.createElement("div");
+    tokensEl.className = "turn-tokens";
+    tokensEl.textContent = t.context_tokens != null ? fmt(t.context_tokens) + " ctx" : "";
+
+    row.appendChild(roleEl);
+    row.appendChild(timeEl);
+    row.appendChild(previewEl);
+    row.appendChild(tokensEl);
     container.appendChild(row);
   });
 }

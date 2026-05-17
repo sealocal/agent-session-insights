@@ -1,4 +1,6 @@
 require "rack/test"
+require "tempfile"
+require "base64"
 
 FIXTURES_DIR = File.expand_path("fixtures", __dir__)
 

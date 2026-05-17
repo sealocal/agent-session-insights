@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Claude Thread Insights</title>
+  <title>Thread Insights</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -36,6 +36,38 @@
       letter-spacing: .08em;
       color: #777;
       border-bottom: 1px solid #1e1e1e;
+    }
+
+    #provider-tabs {
+      display: flex;
+      border-bottom: 1px solid #1e1e1e;
+    }
+    .provider-tab {
+      flex: 1;
+      padding: 10px 12px;
+      text-align: center;
+      cursor: pointer;
+      font: inherit;
+      font-size: 12px;
+      color: #888;
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      user-select: none;
+    }
+    .provider-tab:hover:not(:disabled) { color: #d4d4d4; }
+    .provider-tab:focus-visible {
+      outline: 2px solid #5a9fd4;
+      outline-offset: -2px;
+    }
+    .provider-tab[aria-selected="true"] {
+      color: #e8e8e8;
+      border-bottom-color: #5a9fd4;
+      background: #161616;
+    }
+    .provider-tab:disabled {
+      color: #444;
+      cursor: not-allowed;
     }
 
     .list-pane {
@@ -115,7 +147,7 @@
     .turn-role.assistant { color: #5a9fd4; }
     .turn-time { color: #555; font-size: 11px; font-variant-numeric: tabular-nums; }
     .turn-preview { color: #c0c0c0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .turn-tokens { color: #6a9f5a; font-variant-numeric: tabular-nums; text-align: right; font-size: 11px; white-space: nowrap; }
+    .turn-tokens { color: #5a9fd4; font-variant-numeric: tabular-nums; text-align: right; font-size: 11px; white-space: nowrap; }
 
     #placeholder {
       flex: 1;
@@ -135,7 +167,8 @@
 <body>
 
 <div id="sidebar">
-  <h2>Projects</h2>
+  <div id="provider-tabs" role="tablist" aria-label="Data provider"></div>
+  <h2 id="sidebar-heading">Projects</h2>
   <div class="list-pane" id="projects-list"></div>
 </div>
 
@@ -157,6 +190,7 @@
 const $ = id => document.getElementById(id);
 let chart = null;
 let activeProjectEl = null;
+let activeProvider = "claude";
 
 // ── API helpers ─────────────────────────────────────────────────────────────
 
@@ -164,6 +198,10 @@ async function api(path) {
   const res = await fetch(path);
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
   return res.json();
+}
+
+function providerPath(...parts) {
+  return ["/api/providers", activeProvider, ...parts.map(encodeURIComponent)].join("/");
 }
 
 function fmt(n) {
@@ -183,10 +221,82 @@ function fmtDate(iso) {
   return d.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
+// ── Providers ───────────────────────────────────────────────────────────────
+
+async function loadProviders() {
+  const providers = await api("/api/providers");
+  const tabs = $("provider-tabs");
+  tabs.innerHTML = "";
+
+  const firstAvailable = providers.find(p => p.available) || providers[0];
+  if (firstAvailable) activeProvider = firstAvailable.id;
+
+  const tabEls = providers.map(p => {
+    const tab = document.createElement("button");
+    tab.type = "button";
+    tab.className = "provider-tab";
+    tab.role = "tab";
+    tab.id = `provider-tab-${p.id}`;
+    tab.textContent = p.name;
+    tab.title = p.available ? p.name : `${p.name} (data directory not found)`;
+    tab.disabled = !p.available;
+    tab.setAttribute("aria-selected", p.id === activeProvider ? "true" : "false");
+    // Roving tabindex: only the selected tab is in the tab order; arrow keys
+    // move focus between tabs without leaving the tablist.
+    tab.tabIndex = p.id === activeProvider ? 0 : -1;
+    tab.dataset.providerId = p.id;
+
+    tab.addEventListener("click", () => selectProvider(p.id, tabEls));
+    tabs.appendChild(tab);
+    return tab;
+  });
+
+  tabs.addEventListener("keydown", e => onTabKeydown(e, tabEls));
+}
+
+function selectProvider(providerId, tabEls) {
+  if (activeProvider === providerId) return;
+  activeProvider = providerId;
+  tabEls.forEach(el => {
+    const selected = el.dataset.providerId === providerId;
+    el.setAttribute("aria-selected", selected ? "true" : "false");
+    el.tabIndex = selected ? 0 : -1;
+  });
+  resetSession();
+  loadProjects();
+}
+
+function onTabKeydown(e, tabEls) {
+  const enabled = tabEls.filter(el => !el.disabled);
+  if (enabled.length === 0) return;
+  const currentIdx = enabled.indexOf(document.activeElement);
+  if (currentIdx === -1) return;
+
+  let nextIdx;
+  switch (e.key) {
+    case "ArrowRight": nextIdx = (currentIdx + 1) % enabled.length; break;
+    case "ArrowLeft":  nextIdx = (currentIdx - 1 + enabled.length) % enabled.length; break;
+    case "Home":       nextIdx = 0; break;
+    case "End":        nextIdx = enabled.length - 1; break;
+    default: return;
+  }
+  e.preventDefault();
+  const nextTab = enabled[nextIdx];
+  nextTab.focus();
+  selectProvider(nextTab.dataset.providerId, tabEls);
+}
+
+function resetSession() {
+  $("session-view").style.display = "none";
+  $("placeholder").style.display = "flex";
+  activeProjectEl = null;
+}
+
 // ── Projects ────────────────────────────────────────────────────────────────
 
 async function loadProjects() {
-  const projects = await api("/api/projects");
+  $("sidebar-heading").textContent = "Projects";
+  const projects = await api(providerPath("projects"));
   const list = $("projects-list");
   list.innerHTML = "";
 
@@ -224,7 +334,8 @@ async function loadProjects() {
 // ── Sessions ─────────────────────────────────────────────────────────────────
 
 async function loadSessions(projectId, projectName) {
-  const sessions = await api(`/api/projects/${encodeURIComponent(projectId)}/sessions`);
+  $("sidebar-heading").textContent = "Sessions";
+  const sessions = await api(providerPath("projects", projectId, "sessions"));
 
   // Replace sidebar with sessions sub-list (prepend a back button)
   const list = $("projects-list");
@@ -264,9 +375,7 @@ async function loadSessions(projectId, projectName) {
 // ── Session detail ────────────────────────────────────────────────────────────
 
 async function loadSession(projectId, sessionId) {
-  const session = await api(
-    `/api/projects/${encodeURIComponent(projectId)}/sessions/${sessionId}`
-  );
+  const session = await api(providerPath("projects", projectId, "sessions", sessionId));
 
   $("placeholder").style.display = "none";
   $("session-view").style.display = "flex";
@@ -387,7 +496,14 @@ function renderTurns(turns) {
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 
-loadProjects().catch(e => console.error("Failed to load projects:", e));
+(async () => {
+  try {
+    await loadProviders();
+    await loadProjects();
+  } catch (e) {
+    console.error("Failed to load:", e);
+  }
+})();
 </script>
 </body>
 </html>

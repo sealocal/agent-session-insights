@@ -1,0 +1,2 @@
+{"timestamp":"2026-05-11T09:00:00.000Z","type":"session_meta","payload":{"id":"cccc0003-0000-0000-0000-000000000003","timestamp":"2026-05-11T09:00:00.000Z","cwd":"/Users/test/myproject","originator":"codex_cli_rs","cli_version":"0.47.0"}}
+{"timestamp":"2026-05-11T09:00:01.000Z","type":"event_msg","payload":{"type":"user_message","message":"second session in myproject","kind":"plain"}}

@@ -1,0 +1,4 @@
+{"timestamp":"2026-05-10T11:00:00.000Z","type":"session_meta","payload":{"id":"bbbb0002-0000-0000-0000-000000000002","timestamp":"2026-05-10T11:00:00.000Z","cwd":"/Users/test/other","originator":"codex_cli_rs","cli_version":"0.47.0"}}
+{"timestamp":"2026-05-10T11:00:00.100Z","type":"event_msg","payload":{"type":"user_message","message":"What is 2+2?","kind":"plain"}}
+{"timestamp":"2026-05-10T11:00:01.000Z","type":"event_msg","payload":{"type":"agent_message","message":"4"}}
+{"timestamp":"2026-05-10T11:00:01.100Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":500,"cached_input_tokens":0,"output_tokens":1,"reasoning_output_tokens":0,"total_tokens":501},"last_token_usage":{"input_tokens":500,"cached_input_tokens":0,"output_tokens":1,"reasoning_output_tokens":0,"total_tokens":501},"model_context_window":272000},"rate_limits":{"primary":null,"secondary":null}}}

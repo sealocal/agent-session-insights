@@ -1,9 +1,12 @@
 require "spec_helper"
 
 # Point each provider at a fixture root before loading the app so the
-# Providers registry resolves to deterministic test data.
-ENV["CLAUDE_PROJECTS_DIR"] ||= File.join(FIXTURES_DIR, "claude_projects_root")
-ENV["CODEX_SESSIONS_DIR"] ||= File.join(FIXTURES_DIR, "codex")
+# Providers registry resolves to deterministic test data. Override any
+# inherited values unconditionally — falling back to a developer or CI
+# machine's real ~/.claude or ~/.codex data would make this spec
+# non-deterministic.
+ENV["CLAUDE_PROJECTS_DIR"] = File.join(FIXTURES_DIR, "claude_projects_root")
+ENV["CODEX_SESSIONS_DIR"] = File.join(FIXTURES_DIR, "codex")
 ENV["APP_ENV"] = "test"
 ENV["RACK_ENV"] = "test"
 

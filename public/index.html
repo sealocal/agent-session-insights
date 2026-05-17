@@ -47,18 +47,25 @@
       padding: 10px 12px;
       text-align: center;
       cursor: pointer;
+      font: inherit;
       font-size: 12px;
       color: #888;
+      background: transparent;
+      border: none;
       border-bottom: 2px solid transparent;
       user-select: none;
     }
-    .provider-tab:hover { color: #d4d4d4; }
-    .provider-tab.active {
+    .provider-tab:hover:not(:disabled) { color: #d4d4d4; }
+    .provider-tab:focus-visible {
+      outline: 2px solid #5a9fd4;
+      outline-offset: -2px;
+    }
+    .provider-tab[aria-selected="true"] {
       color: #e8e8e8;
       border-bottom-color: #5a9fd4;
       background: #161616;
     }
-    .provider-tab.disabled {
+    .provider-tab:disabled {
       color: #444;
       cursor: not-allowed;
     }
@@ -160,7 +167,7 @@
 <body>
 
 <div id="sidebar">
-  <div id="provider-tabs"></div>
+  <div id="provider-tabs" role="tablist" aria-label="Data provider"></div>
   <h2 id="sidebar-heading">Projects</h2>
   <div class="list-pane" id="projects-list"></div>
 </div>
@@ -224,25 +231,59 @@ async function loadProviders() {
   const firstAvailable = providers.find(p => p.available) || providers[0];
   if (firstAvailable) activeProvider = firstAvailable.id;
 
-  providers.forEach(p => {
-    const tab = document.createElement("div");
-    tab.className = "provider-tab" +
-      (p.id === activeProvider ? " active" : "") +
-      (p.available ? "" : " disabled");
+  const tabEls = providers.map(p => {
+    const tab = document.createElement("button");
+    tab.type = "button";
+    tab.className = "provider-tab";
+    tab.role = "tab";
+    tab.id = `provider-tab-${p.id}`;
     tab.textContent = p.name;
     tab.title = p.available ? p.name : `${p.name} (data directory not found)`;
-    if (p.available) {
-      tab.addEventListener("click", () => {
-        if (activeProvider === p.id) return;
-        activeProvider = p.id;
-        document.querySelectorAll(".provider-tab").forEach(el => el.classList.remove("active"));
-        tab.classList.add("active");
-        resetSession();
-        loadProjects();
-      });
-    }
+    tab.disabled = !p.available;
+    tab.setAttribute("aria-selected", p.id === activeProvider ? "true" : "false");
+    // Roving tabindex: only the selected tab is in the tab order; arrow keys
+    // move focus between tabs without leaving the tablist.
+    tab.tabIndex = p.id === activeProvider ? 0 : -1;
+    tab.dataset.providerId = p.id;
+
+    tab.addEventListener("click", () => selectProvider(p.id, tabEls));
     tabs.appendChild(tab);
+    return tab;
   });
+
+  tabs.addEventListener("keydown", e => onTabKeydown(e, tabEls));
+}
+
+function selectProvider(providerId, tabEls) {
+  if (activeProvider === providerId) return;
+  activeProvider = providerId;
+  tabEls.forEach(el => {
+    const selected = el.dataset.providerId === providerId;
+    el.setAttribute("aria-selected", selected ? "true" : "false");
+    el.tabIndex = selected ? 0 : -1;
+  });
+  resetSession();
+  loadProjects();
+}
+
+function onTabKeydown(e, tabEls) {
+  const enabled = tabEls.filter(el => !el.disabled);
+  if (enabled.length === 0) return;
+  const currentIdx = enabled.indexOf(document.activeElement);
+  if (currentIdx === -1) return;
+
+  let nextIdx;
+  switch (e.key) {
+    case "ArrowRight": nextIdx = (currentIdx + 1) % enabled.length; break;
+    case "ArrowLeft":  nextIdx = (currentIdx - 1 + enabled.length) % enabled.length; break;
+    case "Home":       nextIdx = 0; break;
+    case "End":        nextIdx = enabled.length - 1; break;
+    default: return;
+  }
+  e.preventDefault();
+  const nextTab = enabled[nextIdx];
+  nextTab.focus();
+  selectProvider(nextTab.dataset.providerId, tabEls);
 }
 
 function resetSession() {

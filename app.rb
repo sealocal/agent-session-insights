@@ -11,19 +11,17 @@ set :port, ENV.fetch("PORT", 4567).to_i
 set :public_folder, File.join(__dir__, "public")
 set :bind, "127.0.0.1"  # local only
 
-before /^\/api/ do
-  content_type :json
-end
-
 # ── Projects ────────────────────────────────────────────────────────────────
 
 get "/api/projects" do
+  content_type :json
   json Projects.list(DATA_ROOT)
 end
 
 # ── Sessions (metadata only) ─────────────────────────────────────────────────
 
 get "/api/projects/:project_id/sessions" do
+  content_type :json
   sessions = Projects.sessions(DATA_ROOT, params[:project_id])
   halt 404, json(error: "project not found") if sessions.nil?
   json sessions
@@ -32,6 +30,7 @@ end
 # ── Full parsed session ───────────────────────────────────────────────────────
 
 get "/api/projects/:project_id/sessions/:session_id" do
+  content_type :json
   path = Projects.session_path(DATA_ROOT, params[:project_id], params[:session_id])
   halt 404, json(error: "session not found") unless path
 

@@ -41,7 +41,7 @@ module Parser
     turns = []
     project = nil
 
-    File.foreach(path).with_index(1) do |raw, line_no|
+    File.foreach(path, encoding: "utf-8").with_index(1) do |raw, line_no|
       line = raw.strip
       next if line.empty?
 

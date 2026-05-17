@@ -83,7 +83,7 @@ module Projects
   # This gives us the real project path rather than an approximate decode.
   def cwd_from_files(files)
     files.each do |path|
-      File.foreach(path) do |line|
+      File.foreach(path, encoding: "utf-8") do |line|
         record = JSON.parse(line.strip)
         cwd = record["cwd"]
         return cwd if cwd && !cwd.empty?

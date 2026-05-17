@@ -1,0 +1,3 @@
+{"type":"permission-mode","permissionMode":"default","sessionId":"sess-noassist"}
+{"type":"user","message":{"role":"user","content":"Hello"},"uuid":"aaaa0001","timestamp":"2026-05-10T10:00:00.000Z","cwd":"/Users/test/proj","sessionId":"sess-noassist"}
+{"type":"user","message":{"role":"user","content":"Anyone there?"},"uuid":"aaaa0002","timestamp":"2026-05-10T10:00:30.000Z","cwd":"/Users/test/proj","sessionId":"sess-noassist"}

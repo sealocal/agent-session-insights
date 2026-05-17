@@ -1,0 +1,3 @@
+{"type":"user","message":{"role":"user","content":"Question"},"uuid":"aaaa0001","timestamp":"2026-05-10T10:00:00.000Z","cwd":"/Users/test/proj","sessionId":"sess-nousage"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Answer with no usage block"}]},"uuid":"bbbb0001","timestamp":"2026-05-10T10:00:05.000Z","cwd":"/Users/test/proj","sessionId":"sess-nousage"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Answer with empty usage"}],"usage":{}},"uuid":"bbbb0002","timestamp":"2026-05-10T10:00:10.000Z","cwd":"/Users/test/proj","sessionId":"sess-nousage"}

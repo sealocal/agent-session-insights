@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bundle exec rspec)",
+      "Bash(bundle exec rspec *)",
+      "Bash(bundle install)",
+      "Bash(bundle exec ruby app.rb)",
+      "Bash(bundle exec standardrb)",
+      "Bash(gh pr view *)",
+      "Bash(gh pr list)",
+      "Bash(gh pr list *)",
+      "Bash(gh pr diff *)",
+      "Bash(gh pr status)",
+      "Bash(gh pr checks *)",
+      "Bash(git status)",
+      "Bash(ls spec/*/)",
+      "Bash(tail -5)",
+      "Bash(tail -15)",
+      "Bash(lsof -nP -iTCP:4567)",
+      "Bash(ls -la /tmp/*)",
+      "Bash(which python3)",
+      "Bash(curl http://localhost:4567/*)"
+    ]
+  }
+}

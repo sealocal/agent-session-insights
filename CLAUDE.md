@@ -21,6 +21,8 @@ eval "$(mise activate zsh)"   # or bash/fish variant
 
 ## Commands
 
+Always invoke `rspec`, `standardrb`, and `ruby app.rb` through `bundle exec` so they resolve to the gem versions pinned in `Gemfile.lock`. Bare invocations may pick up a different installed version.
+
 ```bash
 # Install dependencies
 bundle install

@@ -143,6 +143,8 @@
       border-bottom: 1px solid #1a1a1a;
       font-size: 12px;
     }
+    .turn-row.has-datapoint { cursor: crosshair; }
+    .turn-row.has-datapoint:hover { background: #141e2b; }
     .turn-role { color: #888; font-variant: small-caps; }
     .turn-role.assistant { color: #5a9fd4; }
     .turn-time { color: #555; font-size: 11px; font-variant-numeric: tabular-nums; }
@@ -467,7 +469,14 @@ function renderTurns(turns) {
   const container = $("turns-container");
   container.innerHTML = "";
 
-  turns.forEach(t => {
+  // Build a parallel array mapping each turn to its chart data point index.
+  // The chart only includes assistant turns that have context_tokens.
+  let chartIdx = 0;
+  const turnToChartIndex = turns.map(t =>
+    (t.role === "assistant" && t.context_tokens != null) ? chartIdx++ : null
+  );
+
+  turns.forEach((t, i) => {
     const row = document.createElement("div");
     row.className = "turn-row";
 
@@ -486,6 +495,22 @@ function renderTurns(turns) {
     const tokensEl = document.createElement("div");
     tokensEl.className = "turn-tokens";
     tokensEl.textContent = t.context_tokens != null ? fmt(t.context_tokens) + " ctx" : "";
+
+    const ci = turnToChartIndex[i];
+    if (ci != null) {
+      row.classList.add("has-datapoint");
+      row.addEventListener("mouseenter", () => {
+        const active = [{ datasetIndex: 0, index: ci }, { datasetIndex: 1, index: ci }];
+        chart.setActiveElements(active);
+        chart.tooltip.setActiveElements(active, { x: 0, y: 0 });
+        chart.update();
+      });
+      row.addEventListener("mouseleave", () => {
+        chart.setActiveElements([]);
+        chart.tooltip.setActiveElements([]);
+        chart.update();
+      });
+    }
 
     row.appendChild(roleEl);
     row.appendChild(timeEl);

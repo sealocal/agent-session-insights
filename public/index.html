@@ -192,6 +192,7 @@
 <script>
 const $ = id => document.getElementById(id);
 let chart = null;
+let canvasMouseLeaveHandler = null;
 let activeProjectEl = null;
 let activeProvider = "claude";
 
@@ -401,7 +402,11 @@ function renderChart(turns, chartIndexToRow) {
   let cumOutput = 0;
   const outputData = assistant.map(t => (cumOutput += t.output_tokens ?? 0));
 
+  const canvas = $("chart");
   if (chart) chart.destroy();
+  if (canvasMouseLeaveHandler) {
+    canvas.removeEventListener("mouseleave", canvasMouseLeaveHandler);
+  }
   let lastChartHoverIdx = null;
   const clearChartHover = () => {
     if (lastChartHoverIdx == null) return;
@@ -409,7 +414,7 @@ function renderChart(turns, chartIndexToRow) {
     lastChartHoverIdx = null;
   };
 
-  chart = new Chart($("chart"), {
+  chart = new Chart(canvas, {
     type: "line",
     data: {
       labels,
@@ -482,7 +487,8 @@ function renderChart(turns, chartIndexToRow) {
     },
   });
 
-  chart.canvas.addEventListener("mouseleave", clearChartHover);
+  canvasMouseLeaveHandler = clearChartHover;
+  canvas.addEventListener("mouseleave", canvasMouseLeaveHandler);
 }
 
 // ── Turns list ───────────────────────────────────────────────────────────────────

@@ -144,7 +144,8 @@
       font-size: 12px;
     }
     .turn-row.has-datapoint { cursor: crosshair; }
-    .turn-row.has-datapoint:hover { background: #141e2b; }
+    .turn-row.has-datapoint:hover,
+    .turn-row.chart-hovered { background: #141e2b; }
     .turn-role { color: #888; font-variant: small-caps; }
     .turn-role.assistant { color: #5a9fd4; }
     .turn-time { color: #555; font-size: 11px; font-variant-numeric: tabular-nums; }
@@ -387,13 +388,13 @@ async function loadSession(projectId, sessionId) {
   $("session-stats").textContent =
     `${session.turn_count} turns · peak context ${fmt(session.totals.peak_context_tokens)} tok · output ${fmt(session.totals.output_tokens)} tok`;
 
-  renderChart(session.turns);
-  renderTurns(session.turns);
+  const chartIndexToRow = renderTurns(session.turns);
+  renderChart(session.turns, chartIndexToRow);
 }
 
 // ── Chart ─────────────────────────────────────────────────────────────────────────────
 
-function renderChart(turns) {
+function renderChart(turns, chartIndexToRow) {
   const assistant = turns.filter(t => t.role === "assistant" && t.context_tokens != null);
   const labels = assistant.map(t => fmtTime(t.timestamp));
   const contextData = assistant.map(t => t.context_tokens);
@@ -401,6 +402,12 @@ function renderChart(turns) {
   const outputData = assistant.map(t => (cumOutput += t.output_tokens ?? 0));
 
   if (chart) chart.destroy();
+  let lastChartHoverIdx = null;
+  const clearChartHover = () => {
+    if (lastChartHoverIdx == null) return;
+    chartIndexToRow[lastChartHoverIdx]?.classList.remove("chart-hovered");
+    lastChartHoverIdx = null;
+  };
 
   chart = new Chart($("chart"), {
     type: "line",
@@ -433,6 +440,19 @@ function renderChart(turns) {
       responsive: true,
       maintainAspectRatio: false,
       interaction: { mode: "index", intersect: false },
+      onHover: (_event, activeElements) => {
+        const ci = activeElements.length ? activeElements[0].index : null;
+        if (ci === lastChartHoverIdx) return;
+        clearChartHover();
+        if (ci != null) {
+          const row = chartIndexToRow[ci];
+          if (row) {
+            row.classList.add("chart-hovered");
+            row.scrollIntoView({ block: "nearest" });
+            lastChartHoverIdx = ci;
+          }
+        }
+      },
       plugins: {
         legend: { labels: { color: "#888", font: { size: 11 } } },
         tooltip: {
@@ -461,6 +481,8 @@ function renderChart(turns) {
       },
     },
   });
+
+  chart.canvas.addEventListener("mouseleave", clearChartHover);
 }
 
 // ── Turns list ───────────────────────────────────────────────────────────────────
@@ -475,6 +497,7 @@ function renderTurns(turns) {
   const turnToChartIndex = turns.map(t =>
     (t.role === "assistant" && t.context_tokens != null) ? chartIdx++ : null
   );
+  const chartIndexToRow = [];
 
   turns.forEach((t, i) => {
     const row = document.createElement("div");
@@ -498,6 +521,7 @@ function renderTurns(turns) {
 
     const ci = turnToChartIndex[i];
     if (ci != null) {
+      chartIndexToRow[ci] = row;
       row.classList.add("has-datapoint");
       row.addEventListener("mouseenter", () => {
         const active = [{ datasetIndex: 0, index: ci }, { datasetIndex: 1, index: ci }];
@@ -519,6 +543,8 @@ function renderTurns(turns) {
     row.appendChild(tokensEl);
     container.appendChild(row);
   });
+
+  return chartIndexToRow;
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────────────

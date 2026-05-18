@@ -66,7 +66,7 @@ Four layers — keep them separate:
 Shared structs:
 
 ```ruby
-Turn = Struct.new(
+Parser::Turn = Struct.new(
   :index, :role, :timestamp,
   :context_tokens,        # per-turn snapshot — NOT additive
   :output_tokens,         # additive across turns
@@ -76,14 +76,14 @@ Turn = Struct.new(
   keyword_init: true
 )
 
-Session = Struct.new(
+Parser::Session = Struct.new(
   :session_id, :project, :started_at,
   :turn_count, :turns, :totals,
   keyword_init: true
 )
 ```
 
-**Project stores** (`lib/projects.rb` for Claude, `lib/codex_projects.rb` for Codex): Discover projects, list their sessions, resolve a session id to a file path. Each store decides how to map its on-disk layout to the shared "project → session" model. All file access uses `File.realpath` with a prefix check to prevent directory traversal.
+**Project stores** (`lib/projects.rb` for Claude, `lib/codex_projects.rb` for Codex): Discover projects, list their sessions, resolve a session id to a file path. Each store decides how to map its on-disk layout to the shared "project → session" model. Session file resolution via `session_path` uses `File.realpath` with a prefix check to prevent directory traversal.
 
 **Server (`app.rb`):** Sinatra routes exposing a JSON API. Minimal logic — delegates entirely to providers/parsers/stores.
 - `GET /api/providers` — list providers and whether their data dir exists
@@ -161,7 +161,7 @@ In all cases: **context_tokens is a snapshot, not additive**. **Peak context** =
 | `malformed_lines.jsonl` | Mix of valid JSON and garbage; parser must skip bad lines and continue |
 | `missing_usage.jsonl` | Assistant turns with absent or empty `usage` block |
 | `no_assistant_turns.jsonl` | User-only session; all token fields should be nil |
-| `empty.jsonl` | Single blank line; returns session with 0 turns |
+| `empty.jsonl` | Empty file (0 bytes); returns session with 0 turns |
 
 When adding new parser behavior, add a corresponding fixture and spec context.
 
@@ -171,5 +171,5 @@ When adding new parser behavior, add a corresponding fixture and spec context.
 - **No database** — read-only file I/O only.
 - **No frontend framework** — vanilla JS + Chart.js only. No build step.
 - **Linter is authoritative** — run `bundle exec standardrb` before committing.
-- **Path safety** — all file access goes through each store's `session_path` which validates and uses `File.realpath`.
+- **Path safety** — session file resolution goes through each store's `session_path` which validates and uses `File.realpath`.
 - **Layer separation** — parsers have no HTTP/Rack concerns; server has no parsing logic; frontend consumes the API only.

@@ -192,7 +192,7 @@ let chart = null;
 let activeProjectEl = null;
 let activeProvider = "claude";
 
-// ── API helpers ─────────────────────────────────────────────────────────────
+// ── API helpers ───────────────────────────────────────────────────────────────
 
 async function api(path) {
   const res = await fetch(path);
@@ -292,7 +292,7 @@ function resetSession() {
   activeProjectEl = null;
 }
 
-// ── Projects ────────────────────────────────────────────────────────────────
+// ── Projects ───────────────────────────────────────────────────────────────
 
 async function loadProjects() {
   $("sidebar-heading").textContent = "Projects";
@@ -372,7 +372,7 @@ async function loadSessions(projectId, projectName) {
   });
 }
 
-// ── Session detail ────────────────────────────────────────────────────────────
+// ── Session detail ────────────────────────────────────────────────────────────────
 
 async function loadSession(projectId, sessionId) {
   const session = await api(providerPath("projects", projectId, "sessions", sessionId));
@@ -389,13 +389,14 @@ async function loadSession(projectId, sessionId) {
   renderTurns(session.turns);
 }
 
-// ── Chart ─────────────────────────────────────────────────────────────────────
+// ── Chart ─────────────────────────────────────────────────────────────────────────────
 
 function renderChart(turns) {
   const assistant = turns.filter(t => t.role === "assistant" && t.context_tokens != null);
   const labels = assistant.map(t => fmtTime(t.timestamp));
   const contextData = assistant.map(t => t.context_tokens);
-  const outputData = assistant.map(t => t.output_tokens ?? 0);
+  let cumOutput = 0;
+  const outputData = assistant.map(t => (cumOutput += t.output_tokens ?? 0));
 
   if (chart) chart.destroy();
 
@@ -415,7 +416,7 @@ function renderChart(turns) {
           yAxisID: "yContext",
         },
         {
-          label: "Output tokens",
+          label: "Cumulative output tokens",
           data: outputData,
           borderColor: "#6a9f5a",
           backgroundColor: "transparent",
@@ -460,7 +461,7 @@ function renderChart(turns) {
   });
 }
 
-// ── Turns list ────────────────────────────────────────────────────────────────
+// ── Turns list ───────────────────────────────────────────────────────────────────
 
 function renderTurns(turns) {
   const container = $("turns-container");
@@ -494,7 +495,7 @@ function renderTurns(turns) {
   });
 }
 
-// ── Boot ──────────────────────────────────────────────────────────────────────
+// ── Boot ──────────────────────────────────────────────────────────────────────────────
 
 (async () => {
   try {

@@ -1,6 +1,7 @@
 require "json"
 require "time"
 require "base64"
+require_relative "codex_session_index"
 
 # Codex stores sessions in date-partitioned directories under
 # ~/.codex/sessions/YYYY/MM/DD/, not per-project directories. We derive
@@ -35,10 +36,12 @@ module CodexProjects
     matches = scan_sessions(data_root).select { |s| s[:cwd] == cwd }
     return nil if matches.empty?
 
+    renames = CodexSessionIndex.titles
     matches.map { |s|
       {
         id: s[:session_id],
         project_id: project_id,
+        title: renames[s[:session_id]] || title_from_file(s[:path]),
         size_bytes: File.size(s[:path]),
         modified_at: s[:mtime].utc.iso8601
       }
@@ -116,5 +119,26 @@ module CodexProjects
 
   def safe_filename?(name)
     !name.nil? && name.match?(/\A[0-9a-f-]+\z/i)
+  end
+
+  # Codex has no explicit title field; the first user message is a clean stand-in.
+  # Scan until we hit the first event_msg/user_message — typically within ~10 lines.
+  # The substring guard skips JSON parsing on the vast majority of records.
+  def title_from_file(path)
+    File.foreach(path, encoding: "utf-8") do |line|
+      next unless line.include?(%("type":"user_message"))
+      record = JSON.parse(line.strip)
+      next unless record.is_a?(Hash)
+      text = record.dig("payload", "message")
+      next unless text.is_a?(String)
+      stripped = text.strip
+      next if stripped.empty?
+      return (stripped.length > 140) ? "#{stripped[0, 140]}…" : stripped
+    rescue JSON::ParserError
+      next
+    end
+    nil
+  rescue Errno::ENOENT, Errno::EACCES
+    nil
   end
 end

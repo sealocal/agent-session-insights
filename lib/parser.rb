@@ -18,7 +18,7 @@ module Parser
   )
 
   Session = Struct.new(
-    :session_id, :project, :started_at,
+    :session_id, :project, :title, :started_at,
     :turn_count, :turns, :totals,
     keyword_init: true
   ) do
@@ -26,6 +26,7 @@ module Parser
       {
         session_id: session_id,
         project: project,
+        title: title,
         started_at: started_at,
         turn_count: turn_count,
         turns: turns.map(&:to_h),
@@ -40,6 +41,7 @@ module Parser
     session_id = File.basename(path, ".jsonl")
     turns = []
     project = nil
+    title = nil
 
     File.foreach(path, encoding: "utf-8").with_index(1) do |raw, line_no|
       line = raw.strip
@@ -58,6 +60,11 @@ module Parser
       # Grab project path from whichever record carries cwd first
       project ||= record["cwd"]
 
+      # Title records may appear multiple times as the session grows; keep the latest
+      if record["type"] == "ai-title" && record["aiTitle"].is_a?(String) && !record["aiTitle"].empty?
+        title = record["aiTitle"]
+      end
+
       turn = build_turn(record, turns.length)
       turns << turn if turn
     end
@@ -65,6 +72,7 @@ module Parser
     Session.new(
       session_id: session_id,
       project: project,
+      title: title,
       started_at: turns.first&.timestamp,
       turn_count: turns.length,
       turns: turns,

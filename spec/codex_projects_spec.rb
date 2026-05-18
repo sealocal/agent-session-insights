@@ -40,6 +40,18 @@ RSpec.describe CodexProjects do
       ])
     end
 
+    it "prefers the renamed title from session_index over the first user message" do
+      sessions = CodexProjects.sessions(root, project_id)
+      renamed = sessions.find { |s| s[:id] == "aaaa0001-0000-0000-0000-000000000001" }
+      expect(renamed[:title]).to eq("Renamed by user")
+    end
+
+    it "falls back to the first user message when a session is not in the index" do
+      sessions = CodexProjects.sessions(root, project_id)
+      not_renamed = sessions.find { |s| s[:id] == "cccc0003-0000-0000-0000-000000000003" }
+      expect(not_renamed[:title]).to eq("second session in myproject")
+    end
+
     it "returns nil for an unknown cwd" do
       bogus_id = Base64.urlsafe_encode64("/nope", padding: false)
       expect(CodexProjects.sessions(root, bogus_id)).to be_nil

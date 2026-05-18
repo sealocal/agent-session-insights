@@ -38,6 +38,7 @@ module Projects
       {
         id: File.basename(path, ".jsonl"),
         project_id: project_id,
+        title: title_from_file(path),
         size_bytes: File.size(path),
         modified_at: File.mtime(path).utc.iso8601
       }
@@ -119,5 +120,25 @@ module Projects
   # but good enough when cwd isn't available.
   def decode_dir_name(encoded)
     "/#{encoded.sub(/\A-/, "").gsub("-", "/")}"
+  end
+
+  # Claude writes an {"type":"ai-title","aiTitle":"..."} record once it has
+  # summarized the session, and re-writes it as the conversation evolves.
+  # Returns the most recent non-empty title found, or nil if there is none.
+  # The substring guard skips JSON parsing on the vast majority of lines.
+  def title_from_file(path)
+    title = nil
+    File.foreach(path, encoding: "utf-8") do |line|
+      next unless line.include?(%("type":"ai-title"))
+      record = JSON.parse(line.strip)
+      next unless record.is_a?(Hash)
+      candidate = record["aiTitle"]
+      title = candidate if candidate.is_a?(String) && !candidate.empty?
+    rescue JSON::ParserError
+      next
+    end
+    title
+  rescue Errno::ENOENT, Errno::EACCES
+    nil
   end
 end

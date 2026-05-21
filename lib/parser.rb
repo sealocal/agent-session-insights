@@ -19,7 +19,7 @@ module Parser
 
   Session = Struct.new(
     :session_id, :project, :title, :started_at,
-    :turn_count, :turns, :totals,
+    :turn_count, :turns, :totals, :compactions,
     keyword_init: true
   ) do
     def to_h
@@ -30,7 +30,8 @@ module Parser
         started_at: started_at,
         turn_count: turn_count,
         turns: turns.map(&:to_h),
-        totals: totals
+        totals: totals,
+        compactions: compactions || []
       }
     end
   end
@@ -40,6 +41,7 @@ module Parser
   def parse_file(path)
     session_id = File.basename(path, ".jsonl")
     turns = []
+    compactions = []
     project = nil
     title = nil
 
@@ -65,6 +67,11 @@ module Parser
         title = record["aiTitle"]
       end
 
+      if (compaction = build_compaction(record, turns.length))
+        compactions << compaction
+        next
+      end
+
       turn = build_turn(record, turns.length)
       turns << turn if turn
     end
@@ -76,8 +83,26 @@ module Parser
       started_at: turns.first&.timestamp,
       turn_count: turns.length,
       turns: turns,
-      totals: compute_totals(turns)
+      totals: compute_totals(turns),
+      compactions: compactions
     )
+  end
+
+  # A /compact (manual or automatic) writes a system/compact_boundary record
+  # carrying the pre/post context sizes. We surface it as an event anchored to
+  # the turn position where it occurred (turn_index = turns seen so far), so the
+  # UI can mark the resulting context drop. Returns nil for any other record.
+  def build_compaction(record, turn_index)
+    return nil unless record["type"] == "system" && record["subtype"] == "compact_boundary"
+
+    meta = record["compactMetadata"] || {}
+    {
+      turn_index: turn_index,
+      timestamp: record["timestamp"],
+      trigger: meta["trigger"],
+      pre_tokens: meta["preTokens"],
+      post_tokens: meta["postTokens"]
+    }
   end
 
   # Returns a Turn for user/assistant records that represent real conversation
@@ -147,6 +172,6 @@ module Parser
     return nil if text.nil? || text.strip.empty?
 
     text = text.strip
-    text.length > limit ? "#{text[0, limit]}…" : text
+    (text.length > limit) ? "#{text[0, limit]}…" : text
   end
 end

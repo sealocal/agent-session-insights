@@ -82,6 +82,54 @@ RSpec.describe Parser do
       end
     end
 
+    context "compacted session" do
+      subject(:session) { Parser.parse_file(fixture("compacted_session.jsonl")) }
+
+      it "does not turn the compact_boundary record into a turn" do
+        expect(session.turn_count).to eq(6)
+        expect(session.turns.map(&:role)).to eq(%w[user assistant user assistant user assistant])
+      end
+
+      it "records one compaction event" do
+        expect(session.compactions.length).to eq(1)
+      end
+
+      describe "the compaction event" do
+        subject(:compaction) { session.compactions.first }
+
+        it "anchors to the turn position where it occurred" do
+          # four turns precede the boundary record
+          expect(compaction[:turn_index]).to eq(4)
+        end
+
+        it "captures pre and post context sizes" do
+          expect(compaction[:pre_tokens]).to eq(114_000)
+          expect(compaction[:post_tokens]).to eq(9_000)
+        end
+
+        it "captures the trigger" do
+          expect(compaction[:trigger]).to eq("manual")
+        end
+      end
+
+      it "shows the post-compaction context dropping below the pre-compaction peak" do
+        assistant = session.turns.select { |t| t.role == "assistant" }
+        expect(assistant.last.context_tokens).to be < assistant.first.context_tokens
+      end
+
+      it "exposes compactions in to_h output" do
+        expect(session.to_h[:compactions].first[:post_tokens]).to eq(9_000)
+      end
+    end
+
+    context "session with no compactions" do
+      it "returns an empty compactions array" do
+        session = Parser.parse_file(fixture("normal_session.jsonl"))
+        expect(session.compactions).to eq([])
+        expect(session.to_h[:compactions]).to eq([])
+      end
+    end
+
     context "malformed lines" do
       it "skips bad lines and parses the remaining records" do
         expect { Parser.parse_file(fixture("malformed_lines.jsonl")) }.not_to raise_error

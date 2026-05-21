@@ -79,11 +79,14 @@ Parser::Turn = Struct.new(
 )
 
 Parser::Session = Struct.new(
-  :session_id, :project, :started_at,
+  :session_id, :project, :title, :started_at,
   :turn_count, :turns, :totals,
+  :compactions,           # array of compaction-boundary events (Claude only); [] otherwise
   keyword_init: true
 )
 ```
+
+Each compaction is a hash `{turn_index, timestamp, trigger, pre_tokens, post_tokens}`. `turn_index` is the number of turns that precede the boundary, so the frontend can place a marker at the resulting context drop. The compact-boundary record itself is **not** emitted as a turn.
 
 **Project stores** (`lib/projects.rb` for Claude, `lib/codex_projects.rb` for Codex): Discover projects, list their sessions, resolve a session id to a file path. Each store decides how to map its on-disk layout to the shared "project → session" model. Session file resolution via `session_path` uses `File.realpath` with a prefix check to prevent directory traversal.
 
@@ -122,6 +125,8 @@ Claude JSONL record shape:
   "isMeta": false                        // true → internal harness record, skip
 }
 ```
+
+A `/compact` (manual or automatic) writes a `{"type":"system","subtype":"compact_boundary"}` record whose `compactMetadata` carries `trigger`, `preTokens`, and `postTokens`. The parser collects these into `Session#compactions` (it is not a turn). The accompanying `{"isCompactSummary": true}` user record is still parsed as a normal user turn (the summary text becomes its preview).
 
 **Codex:** `~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl`. Sessions are date-partitioned, not project-partitioned: the first line of each file is a `session_meta` record carrying `cwd`. `CodexProjects` groups sessions by `cwd` to synthesize the "project" concept. Project IDs are url-safe base64 of the cwd. Configurable via `CODEX_SESSIONS_DIR`.
 

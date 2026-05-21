@@ -112,6 +112,13 @@
       align-items: baseline;
       gap: 16px;
     }
+    #session-heading {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
     #session-title {
       font-size: 14px;
       font-weight: 600;
@@ -120,7 +127,21 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
+    #session-meta {
+      font-size: 11px;
+      color: #666;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #session-meta .session-id { color: #888; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
     #session-stats { color: #666; font-size: 11px; white-space: nowrap; }
+
+    .item-id {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      color: #777;
+    }
 
     #chart-container {
       padding: 16px 18px 8px;
@@ -179,7 +200,10 @@
   <div id="placeholder">Select a session to view token usage</div>
   <div id="session-view" style="display:none; flex-direction:column; height:100%; overflow:hidden;">
     <div id="header">
-      <div id="session-title"></div>
+      <div id="session-heading">
+        <div id="session-title"></div>
+        <div id="session-meta"></div>
+      </div>
       <div id="session-stats"></div>
     </div>
     <div id="chart-container">
@@ -367,10 +391,32 @@ async function loadSessions(projectId, projectName) {
     const el = document.createElement("div");
     el.className = "list-item";
     const kb = (s.size_bytes / 1024).toFixed(0);
-    el.innerHTML = `
-      <div class="item-title">${s.id.slice(0, 8)}</div>
-      <div class="item-sub">${fmtDate(s.modified_at)} · ${kb} KB</div>
-    `;
+    const shortId = s.id.slice(0, 8);
+
+    const title = document.createElement("div");
+    title.className = "item-title";
+    if (s.title) {
+      title.textContent = s.title;
+      title.setAttribute("title", `${s.title}\n${s.id}`);
+    } else {
+      title.textContent = shortId;
+      title.setAttribute("title", s.id);
+    }
+
+    const sub = document.createElement("div");
+    sub.className = "item-sub";
+    if (s.title) {
+      const idSpan = document.createElement("span");
+      idSpan.className = "item-id";
+      idSpan.textContent = shortId;
+      sub.appendChild(idSpan);
+      sub.appendChild(document.createTextNode(` · ${fmtDate(s.modified_at)} · ${kb} KB`));
+    } else {
+      sub.textContent = `${fmtDate(s.modified_at)} · ${kb} KB`;
+    }
+
+    el.appendChild(title);
+    el.appendChild(sub);
     el.addEventListener("click", () => loadSession(projectId, s.id));
     list.appendChild(el);
   });
@@ -384,8 +430,30 @@ async function loadSession(projectId, sessionId) {
   $("placeholder").style.display = "none";
   $("session-view").style.display = "flex";
 
-  const name = (session.project || sessionId).split("/").filter(Boolean).pop();
-  $("session-title").textContent = name;
+  const projectName = (session.project || sessionId).split("/").filter(Boolean).pop();
+  const titleEl = $("session-title");
+  const metaEl = $("session-meta");
+  const shortId = (session.session_id || sessionId).slice(0, 8);
+
+  if (session.title) {
+    titleEl.textContent = session.title;
+    titleEl.setAttribute("title", session.title);
+    metaEl.innerHTML = "";
+    const idSpan = document.createElement("span");
+    idSpan.className = "session-id";
+    idSpan.textContent = shortId;
+    metaEl.appendChild(idSpan);
+    metaEl.appendChild(document.createTextNode(` · ${projectName}`));
+  } else {
+    titleEl.textContent = projectName;
+    titleEl.removeAttribute("title");
+    metaEl.innerHTML = "";
+    const idSpan = document.createElement("span");
+    idSpan.className = "session-id";
+    idSpan.textContent = shortId;
+    metaEl.appendChild(idSpan);
+  }
+
   $("session-stats").textContent =
     `${session.turn_count} turns · peak context ${fmt(session.totals.peak_context_tokens)} tok · output ${fmt(session.totals.output_tokens)} tok`;
 

@@ -1,5 +1,6 @@
 require "json"
 require_relative "parser"
+require_relative "codex_session_index"
 
 # Parses Codex CLI rollout JSONL files into Parser::Session objects so the
 # frontend can render them with the same chart and turn-list code paths as
@@ -83,6 +84,7 @@ module CodexParser
     Parser::Session.new(
       session_id: session_id,
       project: project,
+      title: CodexSessionIndex.titles[session_id] || turns.find { |t| t.role == "user" }&.text_preview,
       started_at: started_at || turns.first&.timestamp,
       turn_count: turns.length,
       turns: turns,

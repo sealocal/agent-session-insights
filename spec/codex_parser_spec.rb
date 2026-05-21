@@ -26,6 +26,10 @@ RSpec.describe CodexParser do
       expect(session.turns.map(&:role)).to eq(%w[user assistant user assistant])
     end
 
+    it "prefers the user-renamed title from the session_index over the first user message" do
+      expect(session.title).to eq("Renamed by user")
+    end
+
     describe "first assistant turn" do
       subject(:turn) { session.turns[1] }
 
@@ -74,6 +78,11 @@ RSpec.describe CodexParser do
       expect(session.turns.map(&:role)).to eq(["user"])
       expect(session.totals[:peak_context_tokens]).to be_nil
       expect(session.totals[:output_tokens]).to eq(0)
+    end
+
+    it "falls back to the first user message when no rename is recorded" do
+      session = CodexParser.parse_file(fixture)
+      expect(session.title).to eq("second session in myproject")
     end
   end
 

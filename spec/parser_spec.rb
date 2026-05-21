@@ -18,6 +18,14 @@ RSpec.describe Parser do
         expect(session.project).to eq("/Users/test/myproject")
       end
 
+      it "uses the most recent ai-title record as the session title" do
+        expect(session.title).to eq("Helper function request")
+      end
+
+      it "exposes title in to_h output" do
+        expect(session.to_h[:title]).to eq("Helper function request")
+      end
+
       it "sets started_at to the first turn timestamp" do
         expect(session.started_at).to eq("2026-05-10T10:00:00.000Z")
       end
@@ -111,6 +119,10 @@ RSpec.describe Parser do
 
       it "returns nil peak_context_tokens" do
         expect(session.totals[:peak_context_tokens]).to be_nil
+      end
+
+      it "returns nil title when no ai-title record is present" do
+        expect(session.title).to be_nil
       end
     end
 

@@ -41,6 +41,26 @@ RSpec.describe "HTTP API" do
       get "/api/projects"
       expect(last_response.status).to eq(200)
     end
+
+    it "includes session titles in the sessions list" do
+      get "/api/providers/claude/projects"
+      project = JSON.parse(last_response.body).first
+      get "/api/providers/claude/projects/#{project["id"]}/sessions"
+      expect(last_response.status).to eq(200)
+      session = JSON.parse(last_response.body).first
+      expect(session["title"]).to eq("Helper function request")
+    end
+
+    it "includes the title in the parsed session payload" do
+      get "/api/providers/claude/projects"
+      project = JSON.parse(last_response.body).first
+      get "/api/providers/claude/projects/#{project["id"]}/sessions"
+      session_id = JSON.parse(last_response.body).first["id"]
+
+      get "/api/providers/claude/projects/#{project["id"]}/sessions/#{session_id}"
+      body = JSON.parse(last_response.body)
+      expect(body["title"]).to eq("Helper function request")
+    end
   end
 
   describe "codex provider" do
@@ -58,11 +78,13 @@ RSpec.describe "HTTP API" do
       expect(last_response.status).to eq(200)
       sessions = JSON.parse(last_response.body)
       expect(sessions).not_to be_empty
+      expect(sessions.map { |s| s["title"] }).to all(be_a(String))
 
       get "/api/providers/codex/projects/#{project["id"]}/sessions/#{sessions.first["id"]}"
       expect(last_response.status).to eq(200)
       body = JSON.parse(last_response.body)
       expect(body["project"]).to eq("/Users/test/myproject")
+      expect(body["title"]).to be_a(String)
       expect(body["turns"]).not_to be_empty
     end
   end

@@ -143,9 +143,37 @@
       color: #777;
     }
 
+    #chart-controls {
+      display: flex;
+      gap: 4px;
+      justify-content: flex-end;
+      padding: 10px 18px 0;
+      flex-shrink: 0;
+    }
+    .chart-tab {
+      padding: 4px 10px;
+      font: inherit;
+      font-size: 11px;
+      color: #888;
+      background: transparent;
+      border: 1px solid #2a2a2a;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .chart-tab:hover:not([aria-pressed="true"]) { color: #d4d4d4; }
+    .chart-tab[aria-pressed="true"] {
+      color: #e8e8e8;
+      border-color: #5a9fd4;
+      background: #161616;
+    }
+    .chart-tab:focus-visible {
+      outline: 2px solid #5a9fd4;
+      outline-offset: 1px;
+    }
+
     #chart-container {
-      padding: 16px 18px 8px;
-      height: 260px;
+      padding: 8px 18px 8px;
+      height: 252px;
       flex-shrink: 0;
     }
 
@@ -206,6 +234,7 @@
       </div>
       <div id="session-stats"></div>
     </div>
+    <div id="chart-controls" role="group" aria-label="Chart view"></div>
     <div id="chart-container">
       <canvas id="chart"></canvas>
     </div>
@@ -219,6 +248,8 @@ let chart = null;
 let canvasMouseLeaveHandler = null;
 let activeProjectEl = null;
 let activeProvider = "claude";
+let chartMode = "stock";
+let chartSource = null;  // { turns, chartIndexToRow } for the active session
 
 // ── API helpers ───────────────────────────────────────────────────────────────
 
@@ -458,17 +489,188 @@ async function loadSession(projectId, sessionId) {
     `${session.turn_count} turns · peak context ${fmt(session.totals.peak_context_tokens)} tok · output ${fmt(session.totals.output_tokens)} tok`;
 
   const chartIndexToRow = renderTurns(session.turns);
-  renderChart(session.turns, chartIndexToRow);
+  chartSource = {
+    turns: session.turns,
+    chartIndexToRow,
+    compactions: session.compactions || [],
+  };
+  renderChart(chartSource);
 }
 
 // ── Chart ─────────────────────────────────────────────────────────────────────────────
 
-function renderChart(turns, chartIndexToRow) {
+// Draws a dashed vertical line + label at each compaction boundary. Reads its
+// markers from options.plugins.compactionMarkers; positions itself between the
+// last pre-compaction point and the first post-compaction point.
+const compactionMarkerPlugin = {
+  id: "compactionMarkers",
+  afterDatasetsDraw(chart) {
+    const markers = chart.options.plugins?.compactionMarkers?.markers;
+    if (!markers || !markers.length) return;
+    const { ctx, chartArea, scales } = chart;
+    const xScale = scales.x;
+    const count = chart.data.labels.length;
+    if (!count) return;
+
+    ctx.save();
+    markers.forEach(m => {
+      let xPix;
+      if (m.x <= 0) xPix = xScale.getPixelForValue(0);
+      // compaction after the last charted point: pin to the right edge rather
+      // than snapping onto the final datapoint (which would misread as a drop there)
+      else if (m.x >= count) xPix = chartArea.right;
+      else xPix = (xScale.getPixelForValue(m.x - 1) + xScale.getPixelForValue(m.x)) / 2;
+
+      ctx.strokeStyle = "rgba(200,140,210,0.7)";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(xPix, chartArea.top);
+      ctx.lineTo(xPix, chartArea.bottom);
+      ctx.stroke();
+
+      ctx.setLineDash([]);
+      ctx.fillStyle = "rgba(210,160,220,0.95)";
+      ctx.font = "10px -apple-system, BlinkMacSystemFont, sans-serif";
+      ctx.textBaseline = "top";
+      // keep the label inside the plot area at the edges
+      const nearRight = xPix > chartArea.right - 60;
+      ctx.textAlign = nearRight ? "right" : "left";
+      ctx.fillText(m.label, xPix + (nearRight ? -3 : 3), chartArea.top + 2);
+    });
+    ctx.restore();
+  },
+};
+
+// Maps a turn's full-array index to its position on the chart's x-axis, which
+// only contains assistant turns that carry a context snapshot. Returns the
+// number of charted points that precede the boundary.
+function chartXForTurnIndex(turns, turnIndex) {
+  let n = 0;
+  for (let i = 0; i < turnIndex && i < turns.length; i++) {
+    if (turns[i].role === "assistant" && turns[i].context_tokens != null) n++;
+  }
+  return n;
+}
+
+// Each mode builds its own datasets + y-scales from the assistant turns.
+// "stock" keeps the original view: a per-turn context snapshot (a level) on the
+// left, against an ever-growing cumulative output total on the right.
+// "flow" compares two per-turn flows in the same unit, so they share one axis:
+// fresh (uncached) input tokens vs output tokens generated that turn.
+const CHART_MODES = {
+  stock: {
+    label: "Stock + running total",
+    datasets(assistant) {
+      let cumOutput = 0;
+      return [
+        {
+          label: "Context tokens (snapshot)",
+          data: assistant.map(t => t.context_tokens),
+          borderColor: "#5a9fd4",
+          backgroundColor: "rgba(90,159,212,0.08)",
+          fill: true,
+          tension: 0.3,
+          pointRadius: 3,
+          yAxisID: "yContext",
+        },
+        {
+          label: "Cumulative output tokens",
+          data: assistant.map(t => (cumOutput += t.output_tokens ?? 0)),
+          borderColor: "#6a9f5a",
+          backgroundColor: "transparent",
+          tension: 0.3,
+          pointRadius: 2,
+          yAxisID: "yOutput",
+        },
+      ];
+    },
+    scales: {
+      yContext: {
+        type: "linear",
+        position: "left",
+        ticks: { color: "#5a9fd4", font: { size: 10 }, callback: v => fmt(v) },
+        grid: { color: "#1a1a1a" },
+      },
+      yOutput: {
+        type: "linear",
+        position: "right",
+        ticks: { color: "#6a9f5a", font: { size: 10 }, callback: v => fmt(v) },
+        grid: { drawOnChartArea: false },
+      },
+    },
+  },
+  flow: {
+    label: "Flow vs flow",
+    datasets(assistant) {
+      return [
+        {
+          // context snapshot minus cache reads = new tokens processed this turn,
+          // which is provider-agnostic (Claude: input + cache_creation; Codex:
+          // uncached portion of input_tokens).
+          label: "Input tokens (fresh, per turn)",
+          data: assistant.map(t => t.context_tokens - (t.cache_read_tokens ?? 0)),
+          borderColor: "#5a9fd4",
+          backgroundColor: "transparent",
+          tension: 0.3,
+          pointRadius: 3,
+          yAxisID: "yTokens",
+        },
+        {
+          label: "Output tokens (per turn)",
+          data: assistant.map(t => t.output_tokens ?? 0),
+          borderColor: "#6a9f5a",
+          backgroundColor: "transparent",
+          tension: 0.3,
+          pointRadius: 3,
+          yAxisID: "yTokens",
+        },
+      ];
+    },
+    scales: {
+      yTokens: {
+        type: "linear",
+        position: "left",
+        beginAtZero: true,
+        ticks: { color: "#888", font: { size: 10 }, callback: v => fmt(v) },
+        grid: { color: "#1a1a1a" },
+      },
+    },
+  },
+};
+
+function initChartControls() {
+  const bar = $("chart-controls");
+  bar.innerHTML = "";
+  Object.entries(CHART_MODES).forEach(([id, mode]) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "chart-tab";
+    btn.textContent = mode.label;
+    btn.dataset.mode = id;
+    btn.setAttribute("aria-pressed", id === chartMode ? "true" : "false");
+    btn.addEventListener("click", () => setChartMode(id));
+    bar.appendChild(btn);
+  });
+}
+
+function setChartMode(mode) {
+  if (chartMode === mode || !CHART_MODES[mode]) return;
+  chartMode = mode;
+  $("chart-controls").querySelectorAll(".chart-tab").forEach(el =>
+    el.setAttribute("aria-pressed", el.dataset.mode === mode ? "true" : "false")
+  );
+  if (chartSource) renderChart(chartSource);
+}
+
+function renderChart({ turns, chartIndexToRow, compactions }) {
   const assistant = turns.filter(t => t.role === "assistant" && t.context_tokens != null);
   const labels = assistant.map(t => fmtTime(t.timestamp));
-  const contextData = assistant.map(t => t.context_tokens);
-  let cumOutput = 0;
-  const outputData = assistant.map(t => (cumOutput += t.output_tokens ?? 0));
+  const mode = CHART_MODES[chartMode];
+  const markers = (compactions || []).map(c => ({
+    x: chartXForTurnIndex(turns, c.turn_index),
+    label: `⤵ compact ${fmt(c.pre_tokens)}→${fmt(c.post_tokens)}`,
+  }));
 
   const canvas = $("chart");
   if (chart) chart.destroy();
@@ -484,29 +686,10 @@ function renderChart(turns, chartIndexToRow) {
 
   chart = new Chart(canvas, {
     type: "line",
+    plugins: [compactionMarkerPlugin],
     data: {
       labels,
-      datasets: [
-        {
-          label: "Context tokens (snapshot)",
-          data: contextData,
-          borderColor: "#5a9fd4",
-          backgroundColor: "rgba(90,159,212,0.08)",
-          fill: true,
-          tension: 0.3,
-          pointRadius: 3,
-          yAxisID: "yContext",
-        },
-        {
-          label: "Cumulative output tokens",
-          data: outputData,
-          borderColor: "#6a9f5a",
-          backgroundColor: "transparent",
-          tension: 0.3,
-          pointRadius: 2,
-          yAxisID: "yOutput",
-        },
-      ],
+      datasets: mode.datasets(assistant),
     },
     options: {
       animation: false,
@@ -536,21 +719,11 @@ function renderChart(turns, chartIndexToRow) {
             label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y.toLocaleString()}`,
           },
         },
+        compactionMarkers: { markers },
       },
       scales: {
         x: { ticks: { color: "#555", font: { size: 10 } }, grid: { color: "#1a1a1a" } },
-        yContext: {
-          type: "linear",
-          position: "left",
-          ticks: { color: "#5a9fd4", font: { size: 10 }, callback: v => fmt(v) },
-          grid: { color: "#1a1a1a" },
-        },
-        yOutput: {
-          type: "linear",
-          position: "right",
-          ticks: { color: "#6a9f5a", font: { size: 10 }, callback: v => fmt(v) },
-          grid: { drawOnChartArea: false },
-        },
+        ...mode.scales,
       },
     },
   });
@@ -598,7 +771,7 @@ function renderTurns(turns) {
       chartIndexToRow[ci] = row;
       row.classList.add("has-datapoint");
       row.addEventListener("mouseenter", () => {
-        const active = [{ datasetIndex: 0, index: ci }, { datasetIndex: 1, index: ci }];
+        const active = chart.data.datasets.map((_, di) => ({ datasetIndex: di, index: ci }));
         const pos = chart.getDatasetMeta(0).data[ci].getCenterPoint();
         chart.setActiveElements(active);
         chart.tooltip.setActiveElements(active, pos);
@@ -625,6 +798,7 @@ function renderTurns(turns) {
 
 (async () => {
   try {
+    initChartControls();
     await loadProviders();
     await loadProjects();
   } catch (e) {

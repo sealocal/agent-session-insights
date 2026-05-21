@@ -160,8 +160,8 @@
       border-radius: 4px;
       cursor: pointer;
     }
-    .chart-tab:hover:not([aria-selected="true"]) { color: #d4d4d4; }
-    .chart-tab[aria-selected="true"] {
+    .chart-tab:hover:not([aria-pressed="true"]) { color: #d4d4d4; }
+    .chart-tab[aria-pressed="true"] {
       color: #e8e8e8;
       border-color: #5a9fd4;
       background: #161616;
@@ -234,7 +234,7 @@
       </div>
       <div id="session-stats"></div>
     </div>
-    <div id="chart-controls" role="tablist" aria-label="Chart view"></div>
+    <div id="chart-controls" role="group" aria-label="Chart view"></div>
     <div id="chart-container">
       <canvas id="chart"></canvas>
     </div>
@@ -516,7 +516,9 @@ const compactionMarkerPlugin = {
     markers.forEach(m => {
       let xPix;
       if (m.x <= 0) xPix = xScale.getPixelForValue(0);
-      else if (m.x >= count) xPix = xScale.getPixelForValue(count - 1);
+      // compaction after the last charted point: pin to the right edge rather
+      // than snapping onto the final datapoint (which would misread as a drop there)
+      else if (m.x >= count) xPix = chartArea.right;
       else xPix = (xScale.getPixelForValue(m.x - 1) + xScale.getPixelForValue(m.x)) / 2;
 
       ctx.strokeStyle = "rgba(200,140,210,0.7)";
@@ -641,15 +643,14 @@ function initChartControls() {
   const bar = $("chart-controls");
   bar.innerHTML = "";
   Object.entries(CHART_MODES).forEach(([id, mode]) => {
-    const tab = document.createElement("button");
-    tab.type = "button";
-    tab.className = "chart-tab";
-    tab.role = "tab";
-    tab.textContent = mode.label;
-    tab.dataset.mode = id;
-    tab.setAttribute("aria-selected", id === chartMode ? "true" : "false");
-    tab.addEventListener("click", () => setChartMode(id));
-    bar.appendChild(tab);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "chart-tab";
+    btn.textContent = mode.label;
+    btn.dataset.mode = id;
+    btn.setAttribute("aria-pressed", id === chartMode ? "true" : "false");
+    btn.addEventListener("click", () => setChartMode(id));
+    bar.appendChild(btn);
   });
 }
 
@@ -657,7 +658,7 @@ function setChartMode(mode) {
   if (chartMode === mode || !CHART_MODES[mode]) return;
   chartMode = mode;
   $("chart-controls").querySelectorAll(".chart-tab").forEach(el =>
-    el.setAttribute("aria-selected", el.dataset.mode === mode ? "true" : "false")
+    el.setAttribute("aria-pressed", el.dataset.mode === mode ? "true" : "false")
   );
   if (chartSource) renderChart(chartSource);
 }

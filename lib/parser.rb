@@ -22,6 +22,12 @@ module Parser
     :turn_count, :turns, :totals, :compactions,
     keyword_init: true
   ) do
+    # compactions is Claude-only; other parsers build a Session without it, so
+    # normalize the nil to [] for every caller (not just to_h).
+    def compactions
+      self[:compactions] || []
+    end
+
     def to_h
       {
         session_id: session_id,
@@ -31,7 +37,7 @@ module Parser
         turn_count: turn_count,
         turns: turns.map(&:to_h),
         totals: totals,
-        compactions: compactions || []
+        compactions: compactions
       }
     end
   end

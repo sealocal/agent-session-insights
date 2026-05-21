@@ -130,6 +130,18 @@ RSpec.describe Parser do
       end
     end
 
+    context "session constructed without the compactions keyword (e.g. CodexParser)" do
+      subject(:session) { Parser::Session.new(session_id: "x", turns: [], turn_count: 0, totals: {}) }
+
+      it "normalizes the missing field to [] rather than nil" do
+        expect(session.compactions).to eq([])
+      end
+
+      it "serializes [] in to_h" do
+        expect(session.to_h[:compactions]).to eq([])
+      end
+    end
+
     context "malformed lines" do
       it "skips bad lines and parses the remaining records" do
         expect { Parser.parse_file(fixture("malformed_lines.jsonl")) }.not_to raise_error

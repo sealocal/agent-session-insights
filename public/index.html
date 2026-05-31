@@ -512,7 +512,19 @@ const compactionMarkerPlugin = {
     const count = chart.data.labels.length;
     if (!count) return;
 
+    // Amber reads as a "boundary/checkpoint" event — a different category than
+    // the blue/green data series — while staying within the dark theme's warmth.
+    // Channels (212,159,90) mirror the blue (90,159,212) and green (106,159,90) accents.
+    const lineColor = "rgba(212,159,90,0.7)";
+    const labelColor = "rgba(226,179,120,0.95)";
+    const pillFill = "rgba(18,18,18,0.85)";
+    const pillStroke = "rgba(212,159,90,0.45)";
+    const lineH = 13;
+    const placed = [];
+
     ctx.save();
+    ctx.font = "10px -apple-system, BlinkMacSystemFont, sans-serif";
+    ctx.textBaseline = "top";
     markers.forEach(m => {
       let xPix;
       if (m.x <= 0) xPix = xScale.getPixelForValue(0);
@@ -521,22 +533,43 @@ const compactionMarkerPlugin = {
       else if (m.x >= count) xPix = chartArea.right;
       else xPix = (xScale.getPixelForValue(m.x - 1) + xScale.getPixelForValue(m.x)) / 2;
 
-      ctx.strokeStyle = "rgba(200,140,210,0.7)";
+      ctx.strokeStyle = lineColor;
       ctx.lineWidth = 1;
       ctx.setLineDash([4, 3]);
       ctx.beginPath();
       ctx.moveTo(xPix, chartArea.top);
       ctx.lineTo(xPix, chartArea.bottom);
       ctx.stroke();
-
       ctx.setLineDash([]);
-      ctx.fillStyle = "rgba(210,160,220,0.95)";
-      ctx.font = "10px -apple-system, BlinkMacSystemFont, sans-serif";
-      ctx.textBaseline = "top";
-      // keep the label inside the plot area at the edges
-      const nearRight = xPix > chartArea.right - 60;
-      ctx.textAlign = nearRight ? "right" : "left";
-      ctx.fillText(m.label, xPix + (nearRight ? -3 : 3), chartArea.top + 2);
+
+      // Position the label, keeping it inside the plot area at the right edge.
+      const textW = ctx.measureText(m.label).width;
+      const nearRight = xPix > chartArea.right - (textW + 10);
+      const textX = nearRight ? xPix - 3 - textW : xPix + 3;
+      const padX = 4;
+      const boxX0 = textX - padX;
+      const boxX1 = textX + textW + padX;
+
+      // Stagger labels down a row when they would horizontally overprint a
+      // marker placed close by (two compactions in quick succession).
+      let row = 0;
+      while (placed.some(p => p.row === row && boxX0 < p.x1 && boxX1 > p.x0)) row++;
+      placed.push({x0: boxX0, x1: boxX1, row});
+
+      const textY = chartArea.top + 2 + row * lineH;
+
+      // Dark backing pill so the label stays legible over data lines/gridlines.
+      ctx.fillStyle = pillFill;
+      ctx.strokeStyle = pillStroke;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(boxX0, textY - 2, boxX1 - boxX0, 14, 3);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = labelColor;
+      ctx.textAlign = "left";
+      ctx.fillText(m.label, textX, textY);
     });
     ctx.restore();
   },

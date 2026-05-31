@@ -1,6 +1,9 @@
 .claude/settings.local.json
 
+.vscode/settings.json
+
 # Beads / Dolt files (added by bd init)
 .dolt/
+.beads/issues.jsonl
 *.db
 .beads-credential-key

@@ -502,6 +502,21 @@ async function loadSession(projectId, sessionId) {
 // Draws a dashed vertical line + label at each compaction boundary. Reads its
 // markers from options.plugins.compactionMarkers; positions itself between the
 // last pre-compaction point and the first post-compaction point.
+// roundRect is unsupported on older Safari/Firefox; fall back to an arcTo path
+// so a missing method can't throw and abort the whole chart draw.
+function roundRectPath(ctx, x, y, w, h, r) {
+  if (typeof ctx.roundRect === "function") {
+    ctx.roundRect(x, y, w, h, r);
+    return;
+  }
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
 const compactionMarkerPlugin = {
   id: "compactionMarkers",
   afterDatasetsDraw(chart) {
@@ -520,7 +535,12 @@ const compactionMarkerPlugin = {
     const pillFill = "rgba(18,18,18,0.85)";
     const pillStroke = "rgba(212,159,90,0.45)";
     const lineH = 13;
+    const pillH = 14;
+    const padX = 4;
     const placed = [];
+    // Cap rows to what fits above the x-axis so staggered pills never spill
+    // over the axis/legend (the canvas isn't clipped to chartArea).
+    const maxRows = Math.max(1, Math.floor((chartArea.bottom - chartArea.top - 2) / lineH));
 
     ctx.save();
     ctx.font = "10px -apple-system, BlinkMacSystemFont, sans-serif";
@@ -542,18 +562,21 @@ const compactionMarkerPlugin = {
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // Position the label, keeping it inside the plot area at the right edge.
+      // Position the label, then clamp so the whole pill stays inside the plot
+      // area at both edges (right-anchored near the right, padding-aware).
       const textW = ctx.measureText(m.label).width;
       const nearRight = xPix > chartArea.right - (textW + 10);
-      const textX = nearRight ? xPix - 3 - textW : xPix + 3;
-      const padX = 4;
+      const minTextX = chartArea.left + padX;
+      const maxTextX = chartArea.right - textW - padX;
+      const textX = Math.min(Math.max(nearRight ? xPix - 3 - textW : xPix + 3, minTextX), maxTextX);
       const boxX0 = textX - padX;
       const boxX1 = textX + textW + padX;
 
       // Stagger labels down a row when they would horizontally overprint a
-      // marker placed close by (two compactions in quick succession).
+      // marker placed close by (two compactions in quick succession), but stop
+      // at maxRows so a cluster can't push pills off the bottom of the chart.
       let row = 0;
-      while (placed.some(p => p.row === row && boxX0 < p.x1 && boxX1 > p.x0)) row++;
+      while (row < maxRows - 1 && placed.some(p => p.row === row && boxX0 < p.x1 && boxX1 > p.x0)) row++;
       placed.push({x0: boxX0, x1: boxX1, row});
 
       const textY = chartArea.top + 2 + row * lineH;
@@ -563,7 +586,7 @@ const compactionMarkerPlugin = {
       ctx.strokeStyle = pillStroke;
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.roundRect(boxX0, textY - 2, boxX1 - boxX0, 14, 3);
+      roundRectPath(ctx, boxX0, textY - 2, boxX1 - boxX0, pillH, 3);
       ctx.fill();
       ctx.stroke();
 

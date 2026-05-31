@@ -25,6 +25,7 @@
   },
   "permissions": {
     "allow": [
+      "Bash(eval \"$(mise activate zsh)\")",
       "Bash(bundle exec rspec)",
       "Bash(bundle exec rspec *)",
       "Bash(bundle install)",

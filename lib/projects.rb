@@ -88,7 +88,7 @@ module Projects
 
   def safe_filename?(name)
     # Session IDs are UUIDs; allow hex chars and dashes only
-    !name.nil? && name.match?(/\A[0-9a-f\-]+\z/i)
+    !name.nil? && name.match?(/\A[0-9a-f-]+\z/i)
   end
 
   def session_files(dir)
@@ -119,7 +119,7 @@ module Projects
   # This is lossy (can't distinguish path separator from literal dash)
   # but good enough when cwd isn't available.
   def decode_dir_name(encoded)
-    "/#{encoded.sub(/\A-/, "").gsub("-", "/")}"
+    "/#{encoded.sub(/\A-/, "").tr("-", "/")}"
   end
 
   # Claude writes an {"type":"ai-title","aiTitle":"..."} record once it has

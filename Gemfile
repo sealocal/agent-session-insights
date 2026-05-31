@@ -12,4 +12,3 @@ group :development, :test do
   gem "rack-test", "~> 2.1"
   gem "standard", "~> 1.40"     # rubocop + standardrb rules
 end
-

@@ -223,19 +223,19 @@ RSpec.describe Parser do
     end
 
     it "sums whichever token fields are present" do
-      usage = { "input_tokens" => 100, "cache_read_input_tokens" => 50 }
+      usage = {"input_tokens" => 100, "cache_read_input_tokens" => 50}
       expect(Parser.total_context(usage)).to eq(150)
     end
 
     it "treats missing fields as zero (excludes nils from sum)" do
-      usage = { "input_tokens" => 200 }
+      usage = {"input_tokens" => 200}
       expect(Parser.total_context(usage)).to eq(200)
     end
   end
 
   describe ".extract_preview" do
     it "returns text from a string content field" do
-      record = { "message" => { "content" => "Hello world" } }
+      record = {"message" => {"content" => "Hello world"}}
       expect(Parser.extract_preview(record)).to eq("Hello world")
     end
 
@@ -243,8 +243,8 @@ RSpec.describe Parser do
       record = {
         "message" => {
           "content" => [
-            { "type" => "thinking", "thinking" => "internal..." },
-            { "type" => "text", "text" => "Visible response" }
+            {"type" => "thinking", "thinking" => "internal..."},
+            {"type" => "text", "text" => "Visible response"}
           ]
         }
       }
@@ -253,7 +253,7 @@ RSpec.describe Parser do
 
     it "truncates long text and appends ellipsis" do
       long = "x" * 200
-      record = { "message" => { "content" => long } }
+      record = {"message" => {"content" => long}}
       result = Parser.extract_preview(record, limit: 140)
       expect(result.length).to be <= 141  # 140 chars + "…"
       expect(result).to end_with("…")
@@ -264,7 +264,7 @@ RSpec.describe Parser do
     end
 
     it "returns nil when content is an array with no text blocks" do
-      record = { "message" => { "content" => [{ "type" => "thinking", "thinking" => "..." }] } }
+      record = {"message" => {"content" => [{"type" => "thinking", "thinking" => "..."}]}}
       expect(Parser.extract_preview(record)).to be_nil
     end
   end

@@ -145,11 +145,11 @@
 
     #chart-controls {
       display: flex;
-      gap: 4px;
       justify-content: flex-end;
       padding: 10px 18px 0;
       flex-shrink: 0;
     }
+    /* Segmented control: shared borders, no gap — reads as "pick exactly one". */
     .chart-tab {
       padding: 4px 10px;
       font: inherit;
@@ -157,18 +157,25 @@
       color: #888;
       background: transparent;
       border: 1px solid #2a2a2a;
-      border-radius: 4px;
+      border-radius: 0;
+      margin-left: -1px;
       cursor: pointer;
     }
+    .chart-tab:first-child { border-radius: 4px 0 0 4px; margin-left: 0; }
+    .chart-tab:last-child { border-radius: 0 4px 4px 0; }
     .chart-tab:hover:not([aria-pressed="true"]) { color: #d4d4d4; }
     .chart-tab[aria-pressed="true"] {
       color: #e8e8e8;
       border-color: #5a9fd4;
       background: #161616;
+      position: relative;
+      z-index: 1;
     }
     .chart-tab:focus-visible {
       outline: 2px solid #5a9fd4;
       outline-offset: 1px;
+      position: relative;
+      z-index: 2;
     }
 
     #chart-container {

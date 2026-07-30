@@ -1,4 +1,5 @@
 require "json"
+require_relative "context_windows"
 
 # Parses Claude Code JSONL session files into structured Ruby objects.
 # All format fragility is contained here. Every field is treated as optional.
@@ -20,6 +21,7 @@ module Parser
   Session = Struct.new(
     :session_id, :project, :title, :started_at,
     :turn_count, :turns, :totals, :compactions,
+    :model, :context_window,
     keyword_init: true
   ) do
     # compactions is Claude-only; other parsers build a Session without it, so
@@ -37,7 +39,9 @@ module Parser
         turn_count: turn_count,
         turns: turns.map(&:to_h),
         totals: totals,
-        compactions: compactions
+        compactions: compactions,
+        model: model,
+        context_window: context_window
       }
     end
   end
@@ -50,6 +54,7 @@ module Parser
     compactions = []
     project = nil
     title = nil
+    model = nil
 
     File.foreach(path, encoding: "utf-8").with_index(1) do |raw, line_no|
       line = raw.strip
@@ -73,6 +78,8 @@ module Parser
         title = record["aiTitle"]
       end
 
+      model = extract_model(record) || model
+
       if (compaction = build_compaction(record, turns.length))
         compactions << compaction
         next
@@ -90,8 +97,19 @@ module Parser
       turn_count: turns.length,
       turns: turns,
       totals: compute_totals(turns),
-      compactions: compactions
+      compactions: compactions,
+      model: model,
+      context_window: ContextWindows.for(model)
     )
+  end
+
+  # The model that served a turn. API-error records (rate limits) carry the
+  # placeholder "<synthetic>" rather than a real model, so they're ignored.
+  def extract_model(record)
+    model = record.dig("message", "model")
+    return nil unless model.is_a?(String) && model.start_with?("claude-")
+
+    model
   end
 
   # A /compact (manual or automatic) writes a system/compact_boundary record

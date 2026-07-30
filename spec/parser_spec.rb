@@ -268,4 +268,53 @@ RSpec.describe Parser do
       expect(Parser.extract_preview(record)).to be_nil
     end
   end
+
+  describe "model and context window" do
+    let(:session) { Parser.parse_file(fixture("model_session.jsonl")) }
+
+    it "records the last real model seen" do
+      expect(session.model).to eq("claude-opus-5")
+    end
+
+    it "ignores the <synthetic> model on api-error records" do
+      expect(session.model).not_to eq("<synthetic>")
+    end
+
+    it "resolves the context window from the model" do
+      expect(session.context_window).to eq(1_000_000)
+    end
+
+    it "exposes both in to_h" do
+      expect(session.to_h).to include(model: "claude-opus-5", context_window: 1_000_000)
+    end
+
+    it "leaves both nil when no assistant turn carries a model" do
+      session = Parser.parse_file(fixture("normal_session.jsonl"))
+      expect(session.model).to be_nil
+      expect(session.context_window).to be_nil
+    end
+  end
+end
+
+RSpec.describe ContextWindows do
+  it "maps a known model to its window" do
+    expect(ContextWindows.for("claude-opus-5")).to eq(1_000_000)
+  end
+
+  it "maps the 200k-window model" do
+    expect(ContextWindows.for("claude-haiku-4-5")).to eq(200_000)
+  end
+
+  it "matches ids carrying a date suffix" do
+    expect(ContextWindows.for("claude-haiku-4-5-20251001")).to eq(200_000)
+  end
+
+  it "returns nil for an unknown model" do
+    expect(ContextWindows.for("claude-opus-9")).to be_nil
+  end
+
+  it "returns nil for synthetic and non-string input" do
+    expect(ContextWindows.for("<synthetic>")).to be_nil
+    expect(ContextWindows.for(nil)).to be_nil
+  end
 end

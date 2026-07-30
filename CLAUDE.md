@@ -82,9 +82,16 @@ Parser::Session = Struct.new(
   :session_id, :project, :title, :started_at,
   :turn_count, :turns, :totals,
   :compactions,           # array of compaction-boundary events (Claude only); [] otherwise
+  :model,                 # last real model id seen on an assistant turn; nil otherwise
+  :context_window,        # tokens, resolved from :model via ContextWindows; nil if unknown
   keyword_init: true
 )
 ```
+
+`model` is read from `message.model`. API-error records (rate limits) carry the
+placeholder `"<synthetic>"` and are ignored, so `model` always reflects a real
+model or nil. `context_window` comes from `lib/context_windows.rb`, a small
+model-prefix → window table — the window is not present anywhere in the JSONL.
 
 Each compaction is a hash `{turn_index, timestamp, trigger, pre_tokens, post_tokens}`. `turn_index` is the number of turns that precede the boundary, so the frontend can place a marker at the resulting context drop. The compact-boundary record itself is **not** emitted as a turn.
 
@@ -169,6 +176,7 @@ In all cases: **context_tokens is a snapshot, not additive**. **Peak context** =
 | `missing_usage.jsonl` | Assistant turns with absent or empty `usage` block |
 | `no_assistant_turns.jsonl` | User-only session; all token fields should be nil |
 | `empty.jsonl` | Empty file (0 bytes); returns session with 0 turns |
+| `model_session.jsonl` | Assistant turns carrying `message.model`, including a `"<synthetic>"` rate-limit record; tests model + context-window resolution |
 
 When adding new parser behavior, add a corresponding fixture and spec context.
 

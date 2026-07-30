@@ -272,6 +272,7 @@ function providerPath(...parts) {
 
 function fmt(n) {
   if (n == null) return "—";
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 }
 
@@ -500,6 +501,7 @@ async function loadSession(projectId, sessionId) {
     turns: session.turns,
     chartIndexToRow,
     compactions: session.compactions || [],
+    contextWindow: session.context_window,
   };
   renderChart(chartSource);
 }
@@ -524,6 +526,10 @@ function roundRectPath(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
+// Shared by the marker and context-window labels: their boxes are laid out
+// against each other, so they have to be measured in the same font.
+const LABEL_FONT = "10px -apple-system, BlinkMacSystemFont, sans-serif";
+
 const compactionMarkerPlugin = {
   id: "compactionMarkers",
   afterDatasetsDraw(chart) {
@@ -544,13 +550,16 @@ const compactionMarkerPlugin = {
     const lineH = 13;
     const pillH = 14;
     const padX = 4;
-    const placed = [];
+    // Seeded with the context-window label's box so a pill staggers below it
+    // instead of overprinting it — both claim the top-right corner.
+    const reserved = contextWindowGeometry(chart)?.box;
+    const placed = reserved ? [reserved] : [];
     // Cap rows to what fits above the x-axis so staggered pills never spill
     // over the axis/legend (the canvas isn't clipped to chartArea).
     const maxRows = Math.max(1, Math.floor((chartArea.bottom - chartArea.top - 2) / lineH));
 
     ctx.save();
-    ctx.font = "10px -apple-system, BlinkMacSystemFont, sans-serif";
+    ctx.font = LABEL_FONT;
     ctx.textBaseline = "top";
     markers.forEach(m => {
       let xPix;
@@ -605,6 +614,82 @@ const compactionMarkerPlugin = {
   },
 };
 
+// Draws a horizontal reference line at the model's context window on the
+// context axis. Current models have a 1M window while real sessions peak far
+// below it, so drawing to scale would squash every curve into the bottom of the
+// plot. Instead the line is clamped to the top of the plot area when it sits
+// above the data, and its label carries the true limit and the share consumed.
+// Where the context-window line and its label land. Both plugins derive it from
+// this one function rather than one publishing state for the other, so the
+// layout doesn't depend on the order Chart.js happens to invoke plugins in.
+// Returns null when there's no window to draw. Does not mutate ctx state.
+function contextWindowGeometry(chart) {
+  const cfg = chart.options.plugins?.contextWindow;
+  const scale = chart.scales[cfg?.axis];
+  if (!cfg?.window || !scale) return null;
+
+  const { ctx, chartArea } = chart;
+  const atScale = scale.getPixelForValue(cfg.window);
+  const clamped = atScale < chartArea.top;
+  const y = clamped ? chartArea.top + 0.5 : atScale;
+
+  const pct = cfg.peak ? Math.round((cfg.peak / cfg.window) * 100) : null;
+  const label = `context window ${fmt(cfg.window)}` +
+    (pct == null ? "" : ` · ${pct}% used`);
+
+  ctx.save();
+  ctx.font = LABEL_FONT;
+  const textW = ctx.measureText(label).width;
+  ctx.restore();
+
+  const textX = chartArea.right - 4;
+  return {
+    clamped, y, label, textW, textX,
+    // Same top row the compaction pills start from — only when clamped, since an
+    // in-range line sits at an arbitrary height their row model doesn't address.
+    box: clamped ? {x0: textX - textW - 4, x1: textX + 4, row: 0} : null,
+  };
+}
+
+const contextWindowPlugin = {
+  id: "contextWindow",
+  afterDatasetsDraw(chart) {
+    const geo = contextWindowGeometry(chart);
+    if (!geo) return;
+
+    const { ctx, chartArea } = chart;
+    const { y, clamped, label, textW, textX } = geo;
+    const textY = y + 3;
+
+    // Muted red-grey: reads as a limit without competing with the amber
+    // compaction markers or the blue/green data series.
+    ctx.save();
+    ctx.strokeStyle = "rgba(198,110,110,0.55)";
+    ctx.lineWidth = 1;
+    ctx.setLineDash(clamped ? [2, 4] : [6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(chartArea.left, y);
+    ctx.lineTo(chartArea.right, y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.font = LABEL_FONT;
+    ctx.textBaseline = "top";
+    ctx.textAlign = "right";
+
+    ctx.fillStyle = "rgba(18,18,18,0.85)";
+    ctx.strokeStyle = "rgba(198,110,110,0.35)";
+    ctx.beginPath();
+    roundRectPath(ctx, textX - textW - 4, textY - 2, textW + 8, 14, 3);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = "rgba(214,140,140,0.95)";
+    ctx.fillText(label, textX, textY);
+    ctx.restore();
+  },
+};
+
 // Maps a turn's full-array index to its position on the chart's x-axis, which
 // only contains assistant turns that carry a context snapshot. Returns the
 // number of charted points that precede the boundary.
@@ -624,6 +709,9 @@ function chartXForTurnIndex(turns, turnIndex) {
 const CHART_MODES = {
   stock: {
     label: "Stock + running total",
+    // The window bounds a context snapshot, so it only belongs on the axis that
+    // plots one. Flow mode plots per-turn deltas and gets no reference line.
+    contextAxis: "yContext",
     datasets(assistant) {
       let cumOutput = 0;
       return [
@@ -726,7 +814,7 @@ function setChartMode(mode) {
   if (chartSource) renderChart(chartSource);
 }
 
-function renderChart({ turns, chartIndexToRow, compactions }) {
+function renderChart({ turns, chartIndexToRow, compactions, contextWindow }) {
   const assistant = turns.filter(t => t.role === "assistant" && t.context_tokens != null);
   const labels = assistant.map(t => fmtTime(t.timestamp));
   const mode = CHART_MODES[chartMode];
@@ -734,6 +822,7 @@ function renderChart({ turns, chartIndexToRow, compactions }) {
     x: chartXForTurnIndex(turns, c.turn_index),
     label: `⤵ compact ${fmt(c.pre_tokens)}→${fmt(c.post_tokens)}`,
   }));
+  const peakContext = assistant.reduce((m, t) => Math.max(m, t.context_tokens ?? 0), 0);
 
   const canvas = $("chart");
   if (chart) chart.destroy();
@@ -749,7 +838,7 @@ function renderChart({ turns, chartIndexToRow, compactions }) {
 
   chart = new Chart(canvas, {
     type: "line",
-    plugins: [compactionMarkerPlugin],
+    plugins: [contextWindowPlugin, compactionMarkerPlugin],
     data: {
       labels,
       datasets: mode.datasets(assistant),
@@ -783,6 +872,11 @@ function renderChart({ turns, chartIndexToRow, compactions }) {
           },
         },
         compactionMarkers: { markers },
+        contextWindow: {
+          window: contextWindow,
+          peak: peakContext,
+          axis: mode.contextAxis,
+        },
       },
       scales: {
         x: { ticks: { color: "#555", font: { size: 10 } }, grid: { color: "#1a1a1a" } },

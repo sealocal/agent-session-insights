@@ -75,6 +75,7 @@ Parser::Turn = Struct.new(
   :cache_read_tokens,
   :cache_creation_tokens,
   :text_preview,          # first 140 chars of message content
+  :text,                  # full message text — what the frontend find bar searches
   keyword_init: true
 )
 
@@ -106,6 +107,8 @@ Each compaction is a hash `{turn_index, timestamp, trigger, pre_tokens, post_tok
 Legacy unprefixed routes (`GET /api/projects/...`) are kept as Claude aliases for backwards compatibility.
 
 **Frontend (`public/index.html`):** Single-page app. Vanilla JS + Chart.js. Dark theme. No build step, no framework. Provider toggle at top of sidebar; active provider is held in a single module-level variable. Dual-axis chart: left Y-axis context tokens (blue, area fill), right Y-axis cumulative output tokens (green, line), X-axis turn timestamps.
+
+A find bar (Cmd/Ctrl+F while a session is open, Esc to close) does a literal, case-insensitive substring match over each turn's full `text`, one match per turn. Matching rows show a snippet windowed on the match instead of their preview, so a hit past the 140-char cutoff is still visible; Enter/Shift+Enter step through matches, and an "Only matches" toggle filters the list.
 
 ## Data Sources
 
@@ -176,6 +179,7 @@ In all cases: **context_tokens is a snapshot, not additive**. **Peak context** =
 | `missing_usage.jsonl` | Assistant turns with absent or empty `usage` block |
 | `no_assistant_turns.jsonl` | User-only session; all token fields should be nil |
 | `empty.jsonl` | Empty file (0 bytes); returns session with 0 turns |
+| `long_message.jsonl` | A message whose keyword falls past the 140-char preview cutoff; tests full `text` vs truncated `text_preview` |
 | `model_session.jsonl` | Assistant turns carrying `message.model`, including a `"<synthetic>"` rate-limit record; tests model + context-window resolution |
 
 When adding new parser behavior, add a corresponding fixture and spec context.

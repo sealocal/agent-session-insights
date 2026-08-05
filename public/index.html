@@ -190,6 +190,74 @@
       padding: 0 18px 18px;
     }
 
+    /* ── Find in messages ── */
+    #find-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin: 0 18px 6px;
+      padding: 6px 8px;
+      background: #161616;
+      border: 1px solid #2a2a2a;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+    #find-bar[hidden] { display: none; }
+    #find-input {
+      flex: 1;
+      min-width: 0;
+      font: inherit;
+      font-size: 12px;
+      color: #e8e8e8;
+      background: #0f0f0f;
+      border: 1px solid #2a2a2a;
+      border-radius: 3px;
+      padding: 4px 7px;
+    }
+    #find-input:focus { outline: none; border-color: #5a9fd4; }
+    #find-count {
+      color: #777;
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+      min-width: 56px;
+      text-align: right;
+    }
+    .find-btn {
+      font: inherit;
+      font-size: 11px;
+      color: #888;
+      background: transparent;
+      border: 1px solid #2a2a2a;
+      border-radius: 3px;
+      padding: 3px 7px;
+      cursor: pointer;
+    }
+    .find-btn:hover:not(:disabled) { color: #d4d4d4; }
+    .find-btn:disabled { color: #444; cursor: default; }
+    .find-btn:focus-visible { outline: 2px solid #5a9fd4; outline-offset: 1px; }
+    .find-btn[aria-pressed="true"] {
+      color: #e8e8e8;
+      border-color: #5a9fd4;
+      background: #1a1a1a;
+    }
+
+    .turn-preview mark {
+      background: rgba(212,159,90,0.28);
+      color: #f0dcc0;
+      border-radius: 2px;
+    }
+    #no-matches {
+      padding: 14px 0;
+      color: #555;
+      font-size: 12px;
+    }
+    .turn-row.search-current { background: #1e3a5f; }
+    .turn-row.search-current .turn-preview mark {
+      background: rgba(226,179,120,0.55);
+      color: #1a1a1a;
+    }
+
     .turn-row {
       display: grid;
       grid-template-columns: 60px 80px 1fr auto;
@@ -244,6 +312,14 @@
     <div id="chart-controls" role="group" aria-label="Chart view"></div>
     <div id="chart-container">
       <canvas id="chart"></canvas>
+    </div>
+    <div id="find-bar" hidden>
+      <input id="find-input" type="text" placeholder="Find in messages" autocomplete="off" spellcheck="false" aria-label="Find in messages">
+      <span id="find-count" aria-live="polite"></span>
+      <button type="button" class="find-btn" id="find-prev" title="Previous match (Shift+Enter)" aria-label="Previous match">↑</button>
+      <button type="button" class="find-btn" id="find-next" title="Next match (Enter)" aria-label="Next match">↓</button>
+      <button type="button" class="find-btn" id="find-filter" aria-pressed="false">Only matches</button>
+      <button type="button" class="find-btn" id="find-close" title="Close (Esc)" aria-label="Close find">✕</button>
     </div>
     <div id="turns-container"></div>
   </div>
@@ -357,6 +433,9 @@ function resetSession() {
   $("session-view").style.display = "none";
   $("placeholder").style.display = "flex";
   activeProjectEl = null;
+  turnRows = [];
+  matchRows = [];
+  currentMatch = -1;
 }
 
 // ── Projects ───────────────────────────────────────────────────────────────
@@ -504,6 +583,7 @@ async function loadSession(projectId, sessionId) {
     contextWindow: session.context_window,
   };
   renderChart(chartSource);
+  runSearch();  // re-apply an open find query to the newly loaded session
 }
 
 // ── Chart ─────────────────────────────────────────────────────────────────────────────
@@ -889,11 +969,153 @@ function renderChart({ turns, chartIndexToRow, compactions, contextWindow }) {
   canvas.addEventListener("mouseleave", canvasMouseLeaveHandler);
 }
 
+// ── Find in messages ─────────────────────────────────────────────────────────
+//
+// Literal, case-insensitive substring find over the full message text of every
+// turn (turn.text), not just the preview shown in the row. One match per turn —
+// stepping through repeats inside a single long message isn't meaningful when
+// only a snippet of it is on screen.
+
+// { turn, row, previewEl, matchAt } per turn, in turn order.
+let turnRows = [];
+let matchRows = [];      // indices into turnRows that matched, in order
+let currentMatch = -1;
+let onlyMatches = false;
+let noMatchesEl = null;
+
+const SNIPPET_BEFORE = 40;
+const SNIPPET_LEN = 180;
+
+function initFind() {
+  const input = $("find-input");
+  input.addEventListener("input", runSearch);
+  input.addEventListener("keydown", e => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      stepMatch(e.shiftKey ? -1 : 1);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      closeFind();
+    }
+  });
+  $("find-prev").addEventListener("click", () => stepMatch(-1));
+  $("find-next").addEventListener("click", () => stepMatch(1));
+  $("find-close").addEventListener("click", closeFind);
+  $("find-filter").addEventListener("click", () => {
+    onlyMatches = !onlyMatches;
+    $("find-filter").setAttribute("aria-pressed", String(onlyMatches));
+    applyMatchFilter();
+  });
+
+  document.addEventListener("keydown", e => {
+    if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "f") return;
+    if ($("session-view").style.display === "none") return;
+    e.preventDefault();
+    openFind();
+  });
+}
+
+function openFind() {
+  $("find-bar").hidden = false;
+  $("find-input").focus();
+  $("find-input").select();
+}
+
+function closeFind() {
+  $("find-bar").hidden = true;
+  $("find-input").value = "";
+  runSearch();
+}
+
+function runSearch() {
+  const query = $("find-input").value;
+  const needle = query.toLowerCase();
+  matchRows = [];
+  currentMatch = -1;
+
+  turnRows.forEach((entry, i) => {
+    entry.matchAt = -1;
+    entry.row.classList.remove("search-current");
+    if (needle) {
+      const at = (entry.turn.text ?? entry.turn.text_preview ?? "").toLowerCase().indexOf(needle);
+      if (at !== -1) {
+        entry.matchAt = at;
+        matchRows.push(i);
+      }
+    }
+    renderPreview(entry, query.length);
+  });
+
+  applyMatchFilter();
+  if (matchRows.length) setCurrentMatch(0);
+  updateFindCount();
+}
+
+// Non-matching rows keep their normal preview; a matching row shows a window of
+// the full text centered on the match, so a hit past the 140-char preview is
+// still visible in context.
+function renderPreview(entry, matchLen) {
+  const { turn, previewEl, matchAt } = entry;
+  previewEl.textContent = "";
+
+  if (matchAt < 0) {
+    previewEl.textContent = turn.text_preview ?? "";
+    return;
+  }
+
+  const text = turn.text ?? turn.text_preview ?? "";
+  const start = Math.max(0, matchAt - SNIPPET_BEFORE);
+  const end = Math.min(text.length, Math.max(start + SNIPPET_LEN, matchAt + matchLen));
+
+  const mark = document.createElement("mark");
+  mark.textContent = text.slice(matchAt, matchAt + matchLen);
+
+  if (start > 0) previewEl.append("…");
+  previewEl.append(text.slice(start, matchAt), mark, text.slice(matchAt + matchLen, end));
+  if (end < text.length) previewEl.append("…");
+}
+
+function applyMatchFilter() {
+  const filtering = onlyMatches && $("find-input").value !== "";
+  turnRows.forEach(e => {
+    e.row.style.display = (filtering && e.matchAt < 0) ? "none" : "";
+  });
+  // Filtering to zero matches would otherwise leave a blank pane with no reason given.
+  if (noMatchesEl) {
+    noMatchesEl.style.display = (filtering && matchRows.length === 0) ? "" : "none";
+  }
+}
+
+function setCurrentMatch(i) {
+  if (!matchRows.length) return;
+  turnRows[matchRows[currentMatch]]?.row.classList.remove("search-current");
+  currentMatch = (i + matchRows.length) % matchRows.length;
+  const entry = turnRows[matchRows[currentMatch]];
+  entry.row.classList.add("search-current");
+  entry.row.scrollIntoView({ block: "center" });
+  updateFindCount();
+}
+
+function stepMatch(delta) {
+  if (!matchRows.length) return;
+  setCurrentMatch(currentMatch + delta);
+}
+
+function updateFindCount() {
+  const hasQuery = $("find-input").value !== "";
+  const count = matchRows.length;
+  $("find-count").textContent =
+    !hasQuery ? "" : count ? `${Math.max(currentMatch, 0) + 1}/${count}` : "no matches";
+  $("find-prev").disabled = count === 0;
+  $("find-next").disabled = count === 0;
+}
+
 // ── Turns list ───────────────────────────────────────────────────────────────────
 
 function renderTurns(turns) {
   const container = $("turns-container");
   container.innerHTML = "";
+  turnRows = [];
 
   // Build a parallel array mapping each turn to its chart data point index.
   // The chart only includes assistant turns that have context_tokens.
@@ -946,7 +1168,14 @@ function renderTurns(turns) {
     row.appendChild(previewEl);
     row.appendChild(tokensEl);
     container.appendChild(row);
+    turnRows.push({ turn: t, row, previewEl, matchAt: -1 });
   });
+
+  noMatchesEl = document.createElement("div");
+  noMatchesEl.id = "no-matches";
+  noMatchesEl.textContent = "No messages match this search.";
+  noMatchesEl.style.display = "none";
+  container.appendChild(noMatchesEl);
 
   return chartIndexToRow;
 }
@@ -956,6 +1185,7 @@ function renderTurns(turns) {
 (async () => {
   try {
     initChartControls();
+    initFind();
     await loadProviders();
     await loadProjects();
   } catch (e) {

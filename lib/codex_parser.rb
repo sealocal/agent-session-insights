@@ -52,6 +52,7 @@ module CodexParser
         payload = record["payload"] || {}
         case payload["type"]
         when "user_message"
+          text = message_text(payload)
           turns << Parser::Turn.new(
             index: turns.length,
             role: "user",
@@ -60,9 +61,11 @@ module CodexParser
             output_tokens: nil,
             cache_read_tokens: nil,
             cache_creation_tokens: nil,
-            text_preview: truncate(payload["message"])
+            text_preview: truncate(text),
+            text: text
           )
         when "agent_message"
+          text = message_text(payload)
           turn = Parser::Turn.new(
             index: turns.length,
             role: "assistant",
@@ -71,7 +74,8 @@ module CodexParser
             output_tokens: nil,
             cache_read_tokens: nil,
             cache_creation_tokens: nil,
-            text_preview: truncate(payload["message"])
+            text_preview: truncate(text),
+            text: text
           )
           turns << turn
           last_assistant_turn = turn
@@ -114,10 +118,13 @@ module CodexParser
     }
   end
 
+  def message_text(payload)
+    text = payload["message"].to_s.strip
+    text.empty? ? nil : text
+  end
+
   def truncate(text, limit: 140)
     return nil if text.nil?
-    text = text.to_s.strip
-    return nil if text.empty?
     (text.length > limit) ? "#{text[0, limit]}…" : text
   end
 

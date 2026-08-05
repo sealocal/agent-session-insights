@@ -82,6 +82,40 @@ RSpec.describe Parser do
       end
     end
 
+    context "long message" do
+      subject(:session) { Parser.parse_file(fixture("long_message.jsonl")) }
+
+      describe "the long user turn" do
+        subject(:turn) { session.turns.first }
+
+        it "keeps the full message text for search" do
+          expect(turn.text).to end_with("qux appears only here.")
+        end
+
+        it "truncates text_preview to 140 chars plus an ellipsis" do
+          expect(turn.text_preview.length).to eq(141)
+          expect(turn.text_preview).to end_with("…")
+        end
+
+        it "does not surface a match past the preview cutoff in text_preview" do
+          expect(turn.text_preview).not_to include("qux")
+        end
+      end
+
+      it "carries assistant text joined from content blocks" do
+        expect(session.turns.last.text).to eq("Short reply mentioning qux.")
+      end
+
+      it "leaves text_preview equal to text when the message is short" do
+        turn = session.turns.last
+        expect(turn.text_preview).to eq(turn.text)
+      end
+
+      it "exposes text in to_h output" do
+        expect(session.to_h[:turns].first[:text]).to include("qux")
+      end
+    end
+
     context "compacted session" do
       subject(:session) { Parser.parse_file(fixture("compacted_session.jsonl")) }
 
@@ -233,10 +267,10 @@ RSpec.describe Parser do
     end
   end
 
-  describe ".extract_preview" do
+  describe ".extract_text" do
     it "returns text from a string content field" do
       record = {"message" => {"content" => "Hello world"}}
-      expect(Parser.extract_preview(record)).to eq("Hello world")
+      expect(Parser.extract_text(record)).to eq("Hello world")
     end
 
     it "joins text blocks from an array content field" do
@@ -248,24 +282,37 @@ RSpec.describe Parser do
           ]
         }
       }
-      expect(Parser.extract_preview(record)).to eq("Visible response")
+      expect(Parser.extract_text(record)).to eq("Visible response")
     end
 
-    it "truncates long text and appends ellipsis" do
-      long = "x" * 200
-      record = {"message" => {"content" => long}}
-      result = Parser.extract_preview(record, limit: 140)
-      expect(result.length).to be <= 141  # 140 chars + "…"
-      expect(result).to end_with("…")
+    it "does not truncate long text" do
+      record = {"message" => {"content" => "x" * 200}}
+      expect(Parser.extract_text(record).length).to eq(200)
     end
 
     it "returns nil when content is absent" do
-      expect(Parser.extract_preview({})).to be_nil
+      expect(Parser.extract_text({})).to be_nil
     end
 
     it "returns nil when content is an array with no text blocks" do
       record = {"message" => {"content" => [{"type" => "thinking", "thinking" => "..."}]}}
-      expect(Parser.extract_preview(record)).to be_nil
+      expect(Parser.extract_text(record)).to be_nil
+    end
+  end
+
+  describe ".truncate" do
+    it "truncates long text and appends ellipsis" do
+      result = Parser.truncate("x" * 200, limit: 140)
+      expect(result.length).to eq(141)  # 140 chars + "…"
+      expect(result).to end_with("…")
+    end
+
+    it "leaves text at or under the limit untouched" do
+      expect(Parser.truncate("short")).to eq("short")
+    end
+
+    it "returns nil for nil" do
+      expect(Parser.truncate(nil)).to be_nil
     end
   end
 

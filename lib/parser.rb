@@ -15,6 +15,7 @@ module Parser
     :cache_read_tokens,
     :cache_creation_tokens,
     :text_preview,
+    :text,                      # full message text — what in-session search matches against
     keyword_init: true
   )
 
@@ -143,6 +144,7 @@ module Parser
 
     message = record["message"]
     usage = (message.is_a?(Hash) ? message["usage"] : nil) || {}
+    text = extract_text(record)
 
     Turn.new(
       index: index,
@@ -152,7 +154,8 @@ module Parser
       output_tokens: usage["output_tokens"],
       cache_read_tokens: usage["cache_read_input_tokens"],
       cache_creation_tokens: usage["cache_creation_input_tokens"],
-      text_preview: extract_preview(record)
+      text_preview: truncate(text),
+      text: text
     )
   end
 
@@ -178,9 +181,10 @@ module Parser
     }
   end
 
-  # Extracts a short text preview from a record's message content.
-  # Content may be a plain string or an array of typed blocks.
-  def extract_preview(record, limit: 140)
+  # Extracts the full message text from a record's content, which may be a
+  # plain string or an array of typed blocks. Tool-use/tool-result blocks are
+  # left out — only what reads as message prose.
+  def extract_text(record)
     content = record.dig("message", "content")
     text =
       case content
@@ -195,7 +199,11 @@ module Parser
 
     return nil if text.nil? || text.strip.empty?
 
-    text = text.strip
+    text.strip
+  end
+
+  def truncate(text, limit: 140)
+    return nil if text.nil?
     (text.length > limit) ? "#{text[0, limit]}…" : text
   end
 end

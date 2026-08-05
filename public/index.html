@@ -1027,23 +1027,33 @@ function closeFind() {
   runSearch();
 }
 
+// The query is matched literally — every regex metacharacter is escaped, so the
+// RegExp is only a vehicle for case-insensitive matching against the original
+// string. Matching a lowercased copy instead would misplace the highlight,
+// since case folding can change length (e.g. "İ".toLowerCase() is two chars).
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function runSearch() {
   const query = $("find-input").value;
-  const needle = query.toLowerCase();
+  const needle = query ? new RegExp(escapeRegExp(query), "i") : null;
   matchRows = [];
   currentMatch = -1;
 
   turnRows.forEach((entry, i) => {
     entry.matchAt = -1;
+    entry.matchLen = 0;
     entry.row.classList.remove("search-current");
     if (needle) {
-      const at = (entry.turn.text ?? entry.turn.text_preview ?? "").toLowerCase().indexOf(needle);
-      if (at !== -1) {
-        entry.matchAt = at;
+      const hit = needle.exec(entry.turn.text ?? entry.turn.text_preview ?? "");
+      if (hit) {
+        entry.matchAt = hit.index;
+        entry.matchLen = hit[0].length;
         matchRows.push(i);
       }
     }
-    renderPreview(entry, query.length);
+    renderPreview(entry);
   });
 
   applyMatchFilter();
@@ -1054,8 +1064,8 @@ function runSearch() {
 // Non-matching rows keep their normal preview; a matching row shows a window of
 // the full text centered on the match, so a hit past the 140-char preview is
 // still visible in context.
-function renderPreview(entry, matchLen) {
-  const { turn, previewEl, matchAt } = entry;
+function renderPreview(entry) {
+  const { turn, previewEl, matchAt, matchLen } = entry;
   previewEl.textContent = "";
 
   if (matchAt < 0) {
@@ -1168,7 +1178,7 @@ function renderTurns(turns) {
     row.appendChild(previewEl);
     row.appendChild(tokensEl);
     container.appendChild(row);
-    turnRows.push({ turn: t, row, previewEl, matchAt: -1 });
+    turnRows.push({ turn: t, row, previewEl, matchAt: -1, matchLen: 0 });
   });
 
   noMatchesEl = document.createElement("div");

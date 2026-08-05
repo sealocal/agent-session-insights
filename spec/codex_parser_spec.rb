@@ -52,6 +52,10 @@ RSpec.describe CodexParser do
       it "previews the agent message text" do
         expect(turn.text_preview).to include("Sure")
       end
+
+      it "carries the full message text for search" do
+        expect(turn.text).to include("Sure")
+      end
     end
 
     describe "totals" do
